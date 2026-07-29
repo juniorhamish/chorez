@@ -19,7 +19,9 @@ import {
   MessageSquare,
   LogOut,
   Settings,
-  Loader2
+  Loader2,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx, type ClassValue } from "clsx";
@@ -49,15 +51,50 @@ const ROOMS = [
   { id: "bedroom", name: "Bedroom", icon: Sparkles },
 ];
 
-const WEEK_DAYS = [
-  { label: "Mon", date: "Jul 27" },
-  { label: "Tue", date: "Jul 28", isToday: true },
-  { label: "Wed", date: "Jul 29" },
-  { label: "Thu", date: "Jul 30" },
-  { label: "Fri", date: "Jul 31" },
-  { label: "Sat", date: "Aug 01" },
-  { label: "Sun", date: "Aug 02" },
+const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const MONTH_LABELS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
+/**
+ * Returns the Monday of the week containing the given date (native Date only,
+ * since date-fns is not installed in this project).
+ */
+function getStartOfWeek(date: Date) {
+  const result = new Date(date);
+  const day = result.getDay(); // 0 (Sun) - 6 (Sat)
+  const diff = day === 0 ? -6 : 1 - day;
+  result.setDate(result.getDate() + diff);
+  result.setHours(0, 0, 0, 0);
+  return result;
+}
+
+function isSameDay(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function formatDayDate(date: Date) {
+  return `${MONTH_LABELS[date.getMonth()]} ${String(date.getDate()).padStart(2, "0")}`;
+}
+
+/** Builds the 7 days (Mon-Sun) for the week starting at `weekStart`. */
+function getWeekDays(weekStart: Date) {
+  const today = new Date();
+  return Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(weekStart);
+    date.setDate(weekStart.getDate() + i);
+    return {
+      label: DAY_LABELS[i],
+      date: formatDayDate(date),
+      isToday: isSameDay(date, today),
+    };
+  });
+}
 
 const MOCK_TASKS = [
   { 
@@ -123,6 +160,8 @@ interface DashboardClientProps {
 export default function DashboardClient({ initialDbUser }: DashboardClientProps) {
   const { user } = useUser();
   const userName = initialDbUser?.full_name || user?.given_name || user?.name;
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getStartOfWeek(new Date()));
+  const weekDays = useMemo(() => getWeekDays(currentWeekStart), [currentWeekStart]);
   const [selectedDay, setSelectedDay] = useState("Tue");
   const [selectedRoom, setSelectedRoom] = useState("all");
   const [favoriteRooms, setFavoriteRooms] = useState<string[]>(["kitchen"]);
@@ -143,6 +182,42 @@ export default function DashboardClient({ initialDbUser }: DashboardClientProps)
       return dayMatch && roomMatch && assignmentMatch;
     });
   }, [selectedDay, selectedRoom, viewMode]);
+
+  const goToPreviousWeek = () => {
+    setCurrentWeekStart(prev => {
+      const next = new Date(prev);
+      next.setDate(prev.getDate() - 7);
+      return next;
+    });
+  };
+
+  const goToNextWeek = () => {
+    setCurrentWeekStart(prev => {
+      const next = new Date(prev);
+      next.setDate(prev.getDate() + 7);
+      return next;
+    });
+  };
+
+  const goToCurrentWeek = () => {
+    setCurrentWeekStart(getStartOfWeek(new Date()));
+  };
+
+  const weekRangeLabel = useMemo(() => {
+    const weekEnd = new Date(currentWeekStart);
+    weekEnd.setDate(currentWeekStart.getDate() + 6);
+    const sameMonth = currentWeekStart.getMonth() === weekEnd.getMonth();
+    const startLabel = `${MONTH_LABELS[currentWeekStart.getMonth()]} ${currentWeekStart.getDate()}`;
+    const endLabel = sameMonth
+      ? `${weekEnd.getDate()}`
+      : `${MONTH_LABELS[weekEnd.getMonth()]} ${weekEnd.getDate()}`;
+    return `${startLabel} - ${endLabel}`;
+  }, [currentWeekStart]);
+
+  const isCurrentWeek = useMemo(
+    () => isSameDay(currentWeekStart, getStartOfWeek(new Date())),
+    [currentWeekStart]
+  );
 
   const toggleFavoriteRoom = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -253,8 +328,38 @@ export default function DashboardClient({ initialDbUser }: DashboardClientProps)
 
       {/* 2. WEEKLY CALENDAR SLIDER */}
       <section className="mt-8 overflow-hidden">
+        <div className="flex items-center justify-between px-6 mb-3">
+          <button
+            onClick={goToPreviousWeek}
+            aria-label="Previous Week"
+            title="Previous Week"
+            className="p-2 rounded-full text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors active:scale-90"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          <button
+            onClick={goToCurrentWeek}
+            disabled={isCurrentWeek}
+            className={cn(
+              "text-sm font-black tracking-tight transition-colors rounded-xl px-3 py-1",
+              isCurrentWeek
+                ? "text-indigo-900 cursor-default"
+                : "text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50"
+            )}
+          >
+            {weekRangeLabel}
+          </button>
+          <button
+            onClick={goToNextWeek}
+            aria-label="Next Week"
+            title="Next Week"
+            className="p-2 rounded-full text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors active:scale-90"
+          >
+            <ChevronRight size={20} />
+          </button>
+        </div>
         <div className="flex gap-4 overflow-x-auto px-6 pb-4 scrollbar-hide snap-x">
-          {WEEK_DAYS.map((day) => (
+          {weekDays.map((day) => (
             <button
               key={day.label}
               onClick={() => setSelectedDay(day.label)}
