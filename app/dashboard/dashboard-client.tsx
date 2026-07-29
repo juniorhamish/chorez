@@ -14,7 +14,8 @@ import {
   UtensilsCrossed,
   Sparkles,
   Search,
-  MessageSquare
+  MessageSquare,
+  LogOut
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx, type ClassValue } from "clsx";
@@ -147,9 +148,20 @@ export default function DashboardClient() {
             <h1 className="text-2xl font-bold tracking-tight">Good morning, Alex! 👋</h1>
             <p className="text-indigo-600/70 font-medium">You have <span className="text-indigo-600 font-bold">{filteredTasks.length} tasks</span> left today.</p>
           </div>
-          <button className="p-2 bg-indigo-600 text-white rounded-full shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95">
-            <Plus size={24} />
-          </button>
+          <div className="flex items-center gap-3">
+            <a
+              href="/auth/logout"
+              aria-label="Log Out"
+              title="Log Out"
+              className="p-2.5 rounded-full text-indigo-300 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+            >
+              <LogOut size={18} />
+            </a>
+            <div aria-hidden="true" className="w-px h-6 bg-indigo-100" />
+            <button className="p-2 bg-indigo-600 text-white rounded-full shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95">
+              <Plus size={24} />
+            </button>
+          </div>
         </div>
         <button className="flex items-center gap-2 text-sm font-semibold bg-white border border-indigo-100 px-4 py-2 rounded-2xl shadow-sm hover:border-indigo-200 transition-colors w-full justify-center">
           <UserIcon size={16} className="text-indigo-400" />
