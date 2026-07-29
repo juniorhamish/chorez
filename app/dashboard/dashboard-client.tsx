@@ -132,15 +132,17 @@ export default function DashboardClient({ initialDbUser }: DashboardClientProps)
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [profileName, setProfileName] = useState(userName ?? "");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [viewMode, setViewMode] = useState<'mine' | 'household'>('mine');
 
   // Derived state
   const filteredTasks = useMemo(() => {
     return MOCK_TASKS.filter(task => {
       const dayMatch = task.day === selectedDay;
       const roomMatch = selectedRoom === "all" || task.roomId === selectedRoom;
-      return dayMatch && roomMatch;
+      const assignmentMatch = viewMode === 'household' || task.assignedTo === 'u1';
+      return dayMatch && roomMatch && assignmentMatch;
     });
-  }, [selectedDay, selectedRoom]);
+  }, [selectedDay, selectedRoom, viewMode]);
 
   const toggleFavoriteRoom = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -181,7 +183,13 @@ export default function DashboardClient({ initialDbUser }: DashboardClientProps)
             <h1 className="text-2xl font-bold tracking-tight">
               Good morning{userName ? `, ${userName}` : ''}! 👋
             </h1>
-            <p className="text-indigo-600/70 font-medium">You have <span className="text-indigo-600 font-bold">{filteredTasks.length} tasks</span> left today.</p>
+            <p className="text-indigo-600/70 font-medium">
+              {viewMode === 'mine' ? (
+                <>You have <span className="text-indigo-600 font-bold">{filteredTasks.length} tasks</span> left today.</>
+              ) : (
+                <>Household has <span className="text-indigo-600 font-bold">{filteredTasks.length} tasks</span> today.</>
+              )}
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -210,6 +218,37 @@ export default function DashboardClient({ initialDbUser }: DashboardClientProps)
           <UserIcon size={16} className="text-indigo-400" />
           Invite Member
         </button>
+
+        <div className="flex bg-indigo-50/50 p-1 rounded-2xl mt-4 relative">
+          <motion.div
+            layoutId="activeTab"
+            className="absolute inset-y-1 bg-white rounded-xl shadow-sm z-0"
+            initial={false}
+            animate={{
+              left: viewMode === 'mine' ? '4px' : '50%',
+              right: viewMode === 'mine' ? '50%' : '4px',
+            }}
+            transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+          />
+          <button
+            onClick={() => setViewMode('mine')}
+            className={cn(
+              "flex-1 py-2 text-sm font-black rounded-xl transition-colors relative z-10",
+              viewMode === 'mine' ? "text-indigo-600" : "text-indigo-400 hover:text-indigo-500"
+            )}
+          >
+            My Tasks
+          </button>
+          <button
+            onClick={() => setViewMode('household')}
+            className={cn(
+              "flex-1 py-2 text-sm font-black rounded-xl transition-colors relative z-10",
+              viewMode === 'household' ? "text-indigo-600" : "text-indigo-400 hover:text-indigo-500"
+            )}
+          >
+            Household
+          </button>
+        </div>
       </header>
 
       {/* 2. WEEKLY CALENDAR SLIDER */}
@@ -276,7 +315,9 @@ export default function DashboardClient({ initialDbUser }: DashboardClientProps)
       {/* 4. TASK LIST */}
       <section className="mt-6 px-6 space-y-4">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">Today&apos;s Tasks</h2>
+          <h2 className="text-xl font-bold">
+            {viewMode === 'mine' ? "My Tasks" : "Household Tasks"}
+          </h2>
           <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full uppercase tracking-widest">
             {selectedDay}
           </span>
@@ -318,8 +359,15 @@ export default function DashboardClient({ initialDbUser }: DashboardClientProps)
                         {task.title}
                       </h3>
                     </div>
-                    <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shadow-sm", user?.color)}>
-                      {user?.avatar}
+                    <div className="flex flex-col items-end gap-1">
+                      <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shadow-sm", user?.color)}>
+                        {user?.avatar}
+                      </div>
+                      {viewMode === 'household' && (
+                        <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-tighter">
+                          {user?.name}
+                        </span>
+                      )}
                     </div>
                   </div>
 
