@@ -119,7 +119,7 @@ function Navbar() {
         <div className="flex items-center gap-3">
           {!isLoading && (
             <a
-              href={user ? "/auth/logout" : "/auth/login"}
+              href={user ? "/auth/logout" : "/auth/login?returnTo=/dashboard"}
               className="hidden sm:flex items-center gap-1.5 text-sm font-bold text-indigo-600/80 hover:text-indigo-600 px-4 py-2.5 rounded-2xl transition-colors"
             >
               {user ? <LogOut size={16} /> : <LogIn size={16} />}
@@ -196,7 +196,7 @@ function Hero() {
             </Link>
             {!isLoading && (
               <a
-                href={user ? "/auth/logout" : "/auth/login"}
+                href={user ? "/auth/logout" : "/auth/login?returnTo=/dashboard"}
                 className="font-bold text-indigo-600 px-7 py-4 rounded-2xl border border-indigo-100 bg-white hover:border-indigo-200 transition-colors flex items-center gap-2"
               >
                 {user ? <LogOut size={16} /> : <LogIn size={16} />}
