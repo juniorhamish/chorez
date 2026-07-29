@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { useUser } from "@auth0/nextjs-auth0/client";
 import { 
   Plus, 
   CheckCircle2,
@@ -110,6 +111,8 @@ type Task = (typeof MOCK_TASKS)[number];
  */
 
 export default function DashboardClient() {
+  const { user } = useUser();
+  const userName = user?.given_name || user?.name;
   const [selectedDay, setSelectedDay] = useState("Tue");
   const [selectedRoom, setSelectedRoom] = useState("all");
   const [favoriteRooms, setFavoriteRooms] = useState<string[]>(["kitchen"]);
@@ -145,7 +148,9 @@ export default function DashboardClient() {
       <header className="px-6 pt-10 pb-6 bg-white/50 backdrop-blur-md sticky top-0 z-10 border-b border-indigo-50">
         <div className="flex justify-between items-start mb-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Good morning, Alex! 👋</h1>
+            <h1 className="text-2xl font-bold tracking-tight">
+              Good morning{userName ? `, ${userName}` : ''}! 👋
+            </h1>
             <p className="text-indigo-600/70 font-medium">You have <span className="text-indigo-600 font-bold">{filteredTasks.length} tasks</span> left today.</p>
           </div>
           <div className="flex items-center gap-3">
