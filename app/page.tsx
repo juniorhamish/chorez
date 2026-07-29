@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { useUser } from "@auth0/nextjs-auth0/client";
 import {
   Sparkles,
   Home,
@@ -14,6 +15,7 @@ import {
   UtensilsCrossed,
   Armchair,
   LogIn,
+  LogOut,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { clsx, type ClassValue } from "clsx";
@@ -108,15 +110,22 @@ function Logo() {
 }
 
 function Navbar() {
+  const { user, isLoading } = useUser();
+
   return (
     <header className="sticky top-0 z-30 bg-[#FDFCF0]/80 backdrop-blur-md border-b border-indigo-50">
       <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
         <Logo />
         <div className="flex items-center gap-3">
-          <button className="hidden sm:flex items-center gap-1.5 text-sm font-bold text-indigo-600/80 hover:text-indigo-600 px-4 py-2.5 rounded-2xl transition-colors">
-            <LogIn size={16} />
-            Log In
-          </button>
+          {!isLoading && (
+            <a
+              href={user ? "/auth/logout" : "/auth/login"}
+              className="hidden sm:flex items-center gap-1.5 text-sm font-bold text-indigo-600/80 hover:text-indigo-600 px-4 py-2.5 rounded-2xl transition-colors"
+            >
+              {user ? <LogOut size={16} /> : <LogIn size={16} />}
+              {user ? "Log Out" : "Log In"}
+            </a>
+          )}
           <Link
             href="/dashboard"
             className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold px-5 py-2.5 rounded-2xl shadow-lg shadow-indigo-200 transition-all active:scale-95"
@@ -130,6 +139,8 @@ function Navbar() {
 }
 
 function Hero() {
+  const { user, isLoading } = useUser();
+
   return (
     <section className="relative overflow-hidden">
       {/* Decorative blobs */}
@@ -183,10 +194,15 @@ function Hero() {
                 className="transition-transform group-hover:translate-x-1"
               />
             </Link>
-            <button className="font-bold text-indigo-600 px-7 py-4 rounded-2xl border border-indigo-100 bg-white hover:border-indigo-200 transition-colors flex items-center gap-2">
-              <LogIn size={16} />
-              Log In
-            </button>
+            {!isLoading && (
+              <a
+                href={user ? "/auth/logout" : "/auth/login"}
+                className="font-bold text-indigo-600 px-7 py-4 rounded-2xl border border-indigo-100 bg-white hover:border-indigo-200 transition-colors flex items-center gap-2"
+              >
+                {user ? <LogOut size={16} /> : <LogIn size={16} />}
+                {user ? "Log Out" : "Log In"}
+              </a>
+            )}
           </motion.div>
 
           <motion.div
