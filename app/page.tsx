@@ -1,423 +1,474 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import { 
-  Plus, 
-  Calendar, 
-  CheckCircle2, 
-  Star, 
-  Clock, 
-  User as UserIcon, 
-  ChevronRight, 
-  X,
-  Bath,
-  Armchair,
-  Home,
-  UtensilsCrossed,
+import React from "react";
+import Link from "next/link";
+import {
   Sparkles,
-  Search,
-  MessageSquare
+  Home,
+  UserIcon,
+  Clock,
+  Star,
+  ArrowRight,
+  CheckCircle2,
+  Bath,
+  UtensilsCrossed,
+  Armchair,
+  LogIn,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
-/** 
- * UTILS 
+/**
+ * UTILS
  */
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-/** 
- * MOCK DATA 
+/**
+ * MOCK DATA
  */
-const USERS = [
-  { id: "u1", name: "Alex", avatar: "A", color: "bg-indigo-100 text-indigo-700" },
-  { id: "u2", name: "Jordan", avatar: "J", color: "bg-rose-100 text-rose-700" },
-  { id: "u3", name: "Sam", avatar: "S", color: "bg-amber-100 text-amber-700" },
+const FEATURES = [
+  {
+    icon: Home,
+    title: "Track by room",
+    description:
+      "Organize chores by Kitchen, Bathroom, Living Room and more, so nothing in the house gets forgotten.",
+    accent: "indigo",
+  },
+  {
+    icon: UserIcon,
+    title: "Assign to household members",
+    description:
+      "Split the work fairly. Every task gets a name attached, so everyone knows what's theirs to do.",
+    accent: "amber",
+  },
+  {
+    icon: Clock,
+    title: "Track effort & duration",
+    description:
+      "Log how long each chore actually took and rate the effort, so you can plan the week realistically.",
+    accent: "green",
+  },
+  {
+    icon: Star,
+    title: "Favorite the essentials",
+    description:
+      "Star the rooms and tasks you care about most to keep them pinned right at the top of your day.",
+    accent: "indigo",
+  },
 ];
 
-const ROOMS = [
-  { id: "all", name: "All", icon: Home },
+const PREVIEW_ROOMS = [
   { id: "kitchen", name: "Kitchen", icon: UtensilsCrossed },
   { id: "bathroom", name: "Bathroom", icon: Bath },
   { id: "living-room", name: "Living Room", icon: Armchair },
-  { id: "bedroom", name: "Bedroom", icon: Sparkles },
 ];
 
-const WEEK_DAYS = [
-  { label: "Mon", date: "Jul 27" },
-  { label: "Tue", date: "Jul 28", isToday: true },
-  { label: "Wed", date: "Jul 29" },
-  { label: "Thu", date: "Jul 30" },
-  { label: "Fri", date: "Jul 31" },
-  { label: "Sat", date: "Aug 01" },
-  { label: "Sun", date: "Aug 02" },
-];
+const ACCENT_STYLES: Record<
+  string,
+  { bg: string; text: string; ring: string }
+> = {
+  indigo: { bg: "bg-indigo-100", text: "text-indigo-600", ring: "shadow-indigo-100" },
+  amber: { bg: "bg-amber-100", text: "text-amber-500", ring: "shadow-amber-100" },
+  green: { bg: "bg-[#88A47C]/15", text: "text-[#5A7350]", ring: "shadow-green-100" },
+};
 
-const MOCK_TASKS = [
-  { 
-    id: "t1", 
-    title: "Deep clean oven", 
-    roomId: "kitchen", 
-    duration: "45m", 
-    assignedTo: "u1", 
-    isFavorite: true,
-    day: "Tue"
-  },
-  { 
-    id: "t2", 
-    title: "Mop bathroom floor", 
-    roomId: "bathroom", 
-    duration: "15m", 
-    assignedTo: "u2", 
-    isFavorite: false,
-    day: "Tue"
-  },
-  { 
-    id: "t3", 
-    title: "Water the plants", 
-    roomId: "living-room", 
-    duration: "10m", 
-    assignedTo: "u3", 
-    isFavorite: false,
-    day: "Tue"
-  },
-  { 
-    id: "t4", 
-    title: "Vacuum living room", 
-    roomId: "living-room", 
-    duration: "20m", 
-    assignedTo: "u1", 
-    isFavorite: true,
-    day: "Wed"
-  },
-  { 
-    id: "t5", 
-    title: "Take out recycling", 
-    roomId: "kitchen", 
-    duration: "5m", 
-    assignedTo: "u2", 
-    isFavorite: false,
-    day: "Tue"
-  },
-];
+/**
+ * ANIMATION VARIANTS
+ */
+const fadeUp = {
+  hidden: { opacity: 0, y: 24 },
+  show: { opacity: 1, y: 0 },
+};
 
-/** 
- * COMPONENTS 
+const stagger = {
+  hidden: {},
+  show: {
+    transition: {
+      staggerChildren: 0.12,
+    },
+  },
+};
+
+/**
+ * COMPONENTS
  */
 
-export default function HouseholdDashboard() {
-  const [selectedDay, setSelectedDay] = useState("Tue");
-  const [selectedRoom, setSelectedRoom] = useState("all");
-  const [favoriteRooms, setFavoriteRooms] = useState<string[]>(["kitchen"]);
-  const [favoriteTasks, setFavoriteTasks] = useState<string[]>(["t1"]);
-  const [completingTask, setCompletingTask] = useState<any>(null);
-  const [rating, setRating] = useState(0);
-
-  // Derived state
-  const filteredTasks = useMemo(() => {
-    return MOCK_TASKS.filter(task => {
-      const dayMatch = task.day === selectedDay;
-      const roomMatch = selectedRoom === "all" || task.roomId === selectedRoom;
-      return dayMatch && roomMatch;
-    });
-  }, [selectedDay, selectedRoom]);
-
-  const toggleFavoriteRoom = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setFavoriteRooms(prev => 
-      prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]
-    );
-  };
-
-  const toggleFavoriteTask = (id: string) => {
-    setFavoriteTasks(prev => 
-      prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]
-    );
-  };
-
+function Logo() {
   return (
-    <div className="min-h-screen bg-[#FDFCF0] text-[#2D336B] pb-20 font-sans selection:bg-indigo-100">
-      {/* 1. HEADER */}
-      <header className="px-6 pt-10 pb-6 bg-white/50 backdrop-blur-md sticky top-0 z-10 border-b border-indigo-50">
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Good morning, Alex! 👋</h1>
-            <p className="text-indigo-600/70 font-medium">You have <span className="text-indigo-600 font-bold">{filteredTasks.length} tasks</span> left today.</p>
-          </div>
-          <button className="p-2 bg-indigo-600 text-white rounded-full shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95">
-            <Plus size={24} />
-          </button>
-        </div>
-        <button className="flex items-center gap-2 text-sm font-semibold bg-white border border-indigo-100 px-4 py-2 rounded-2xl shadow-sm hover:border-indigo-200 transition-colors w-full justify-center">
-          <UserIcon size={16} className="text-indigo-400" />
-          Invite Member
-        </button>
-      </header>
+    <div className="flex items-center gap-2">
+      <div className="w-9 h-9 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200 rotate-3">
+        <Sparkles size={18} className="text-white" />
+      </div>
+      <span className="text-lg font-black tracking-tight">Chorez</span>
+    </div>
+  );
+}
 
-      {/* 2. WEEKLY CALENDAR SLIDER */}
-      <section className="mt-8 overflow-hidden">
-        <div className="flex gap-4 overflow-x-auto px-6 pb-4 scrollbar-hide snap-x">
-          {WEEK_DAYS.map((day) => (
-            <button
-              key={day.label}
-              onClick={() => setSelectedDay(day.label)}
+function Navbar() {
+  return (
+    <header className="sticky top-0 z-30 bg-[#FDFCF0]/80 backdrop-blur-md border-b border-indigo-50">
+      <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+        <Logo />
+        <div className="flex items-center gap-3">
+          <button className="hidden sm:flex items-center gap-1.5 text-sm font-bold text-indigo-600/80 hover:text-indigo-600 px-4 py-2.5 rounded-2xl transition-colors">
+            <LogIn size={16} />
+            Log In
+          </button>
+          <Link
+            href="/dashboard"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold px-5 py-2.5 rounded-2xl shadow-lg shadow-indigo-200 transition-all active:scale-95"
+          >
+            Get Started
+          </Link>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function Hero() {
+  return (
+    <section className="relative overflow-hidden">
+      {/* Decorative blobs */}
+      <div className="absolute -top-24 -right-24 w-72 h-72 bg-amber-200/40 rounded-full blur-3xl" />
+      <div className="absolute top-40 -left-24 w-72 h-72 bg-[#88A47C]/20 rounded-full blur-3xl" />
+
+      <div className="relative max-w-6xl mx-auto px-6 pt-16 pb-20 md:pt-24 md:pb-28 grid md:grid-cols-2 gap-12 items-center">
+        <motion.div
+          initial="hidden"
+          animate="show"
+          variants={stagger}
+        >
+          <motion.div
+            variants={fadeUp}
+            className="inline-flex items-center gap-2 bg-white border border-indigo-100 px-4 py-1.5 rounded-full shadow-sm mb-6"
+          >
+            <span className="w-1.5 h-1.5 bg-[#88A47C] rounded-full" />
+            <span className="text-xs font-black uppercase tracking-widest text-indigo-500">
+              Built for households
+            </span>
+          </motion.div>
+
+          <motion.h1
+            variants={fadeUp}
+            className="text-4xl md:text-6xl font-black tracking-tight leading-[1.05] mb-6"
+          >
+            Chores, actually{" "}
+            <span className="relative inline-block">
+              <span className="relative z-10">done.</span>
+              <span className="absolute left-0 bottom-1 md:bottom-2 h-3 md:h-4 w-full bg-amber-200/70 -rotate-1 rounded-sm z-0" />
+            </span>
+          </motion.h1>
+
+          <motion.p
+            variants={fadeUp}
+            className="text-indigo-600/70 text-lg font-medium max-w-md mb-8"
+          >
+            Chorez helps your household track tasks by room, split the load
+            fairly, and celebrate the wins &mdash; so nothing falls through
+            the cracks again.
+          </motion.p>
+
+          <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-4">
+            <Link
+              href="/dashboard"
+              className="group bg-indigo-600 hover:bg-indigo-700 text-white font-black px-7 py-4 rounded-2xl shadow-xl shadow-indigo-200 transition-all active:scale-95 flex items-center gap-2"
+            >
+              Get Started
+              <ArrowRight
+                size={18}
+                className="transition-transform group-hover:translate-x-1"
+              />
+            </Link>
+            <button className="font-bold text-indigo-600 px-7 py-4 rounded-2xl border border-indigo-100 bg-white hover:border-indigo-200 transition-colors flex items-center gap-2">
+              <LogIn size={16} />
+              Log In
+            </button>
+          </motion.div>
+
+          <motion.div
+            variants={fadeUp}
+            className="flex items-center gap-3 mt-10"
+          >
+            <div className="flex -space-x-3">
+              {[
+                { label: "A", color: "bg-indigo-100 text-indigo-700" },
+                { label: "J", color: "bg-rose-100 text-rose-700" },
+                { label: "S", color: "bg-amber-100 text-amber-700" },
+              ].map((u) => (
+                <div
+                  key={u.label}
+                  className={cn(
+                    "w-9 h-9 rounded-full border-2 border-[#FDFCF0] flex items-center justify-center font-black text-xs shadow-sm",
+                    u.color
+                  )}
+                >
+                  {u.label}
+                </div>
+              ))}
+            </div>
+            <p className="text-sm font-bold text-indigo-400">
+              Loved by families keeping their homes in sync
+            </p>
+          </motion.div>
+        </motion.div>
+
+        {/* Preview card */}
+        <motion.div
+          initial={{ opacity: 0, y: 30, rotate: -2 }}
+          animate={{ opacity: 1, y: 0, rotate: -2 }}
+          transition={{ duration: 0.6, delay: 0.2 }}
+          whileHover={{ rotate: 0 }}
+          className="relative mx-auto w-full max-w-sm"
+        >
+          <div className="bg-white rounded-[2.5rem] p-6 border border-indigo-50 shadow-2xl shadow-indigo-100/80">
+            <div className="flex items-center justify-between mb-5">
+              <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded-md">
+                Kitchen
+              </span>
+              <Star size={16} className="fill-amber-400 text-amber-400" />
+            </div>
+            <h3 className="font-black text-xl leading-tight mb-4">
+              Deep clean oven
+            </h3>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-400">
+                <Clock size={14} />
+                45m
+              </div>
+              <div className="w-9 h-9 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-sm shadow-sm">
+                A
+              </div>
+            </div>
+            <button className="mt-5 w-full bg-[#88A47C] text-white py-3 rounded-2xl font-bold text-sm shadow-lg shadow-green-100 flex items-center justify-center gap-2">
+              <CheckCircle2 size={16} />
+              Done
+            </button>
+          </div>
+
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, delay: 0.6 }}
+            className="absolute -bottom-6 -left-8 bg-white rounded-2xl px-4 py-3 border border-indigo-50 shadow-xl flex items-center gap-2"
+          >
+            <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-black text-[10px]">
+              S
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300">
+                Just finished
+              </p>
+              <p className="text-xs font-bold text-indigo-600">
+                Water the plants
+              </p>
+            </div>
+          </motion.div>
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+function RoomStrip() {
+  return (
+    <section className="max-w-6xl mx-auto px-6 pb-4">
+      <div className="flex items-center justify-center gap-3 flex-wrap">
+        {PREVIEW_ROOMS.map((room) => {
+          const Icon = room.icon;
+          return (
+            <div
+              key={room.id}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-indigo-50 bg-white text-indigo-500 shadow-sm"
+            >
+              <Icon size={16} className="text-indigo-400" />
+              <span className="font-bold text-sm">{room.name}</span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function Features() {
+  return (
+    <section className="max-w-6xl mx-auto px-6 py-20 md:py-28">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-80px" }}
+        transition={{ duration: 0.5 }}
+        className="text-center max-w-2xl mx-auto mb-14"
+      >
+        <span className="text-xs font-black uppercase tracking-widest text-indigo-400">
+          Everything the household needs
+        </span>
+        <h2 className="text-3xl md:text-4xl font-black tracking-tight mt-3">
+          One place to run the whole home.
+        </h2>
+        <p className="text-indigo-600/70 font-medium mt-4">
+          From the kitchen sink to the bathroom floor, Chorez keeps every
+          chore visible, assigned, and accounted for.
+        </p>
+      </motion.div>
+
+      <motion.div
+        initial="hidden"
+        whileInView="show"
+        viewport={{ once: true, margin: "-80px" }}
+        variants={stagger}
+        className="grid sm:grid-cols-2 gap-5"
+      >
+        {FEATURES.map((feature) => {
+          const Icon = feature.icon;
+          const accent = ACCENT_STYLES[feature.accent];
+          return (
+            <motion.div
+              key={feature.title}
+              variants={fadeUp}
+              whileHover={{ y: -4 }}
               className={cn(
-                "flex flex-col items-center min-w-[70px] py-4 rounded-3xl transition-all snap-center",
-                selectedDay === day.label 
-                  ? "bg-indigo-600 text-white shadow-xl shadow-indigo-200 scale-105" 
-                  : "bg-white text-indigo-400 border border-indigo-50"
+                "bg-white p-7 rounded-[2rem] border border-indigo-50 shadow-sm hover:shadow-md transition-shadow",
+                accent.ring
               )}
             >
-              <span className="text-xs font-bold uppercase tracking-wider mb-1">{day.label}</span>
-              <span className="text-lg font-bold">{day.date.split(" ")[1]}</span>
-              {day.isToday && selectedDay !== day.label && (
-                <div className="w-1 h-1 bg-indigo-600 rounded-full mt-1" />
-              )}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* 3. ROOM TABS / CATEGORIES */}
-      <section className="mt-8 px-6">
-        <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
-          {ROOMS.map((room) => {
-            const isFav = favoriteRooms.includes(room.id);
-            const Icon = room.icon;
-            const isActive = selectedRoom === room.id;
-            
-            return (
-              <button
-                key={room.id}
-                onClick={() => setSelectedRoom(room.id)}
+              <div
                 className={cn(
-                  "flex items-center gap-2 px-4 py-3 rounded-2xl border transition-all whitespace-nowrap group",
-                  isActive
-                    ? "bg-indigo-900 border-indigo-900 text-white shadow-lg"
-                    : "bg-white border-indigo-50 text-indigo-600 hover:border-indigo-200"
+                  "w-12 h-12 rounded-2xl flex items-center justify-center mb-5",
+                  accent.bg
                 )}
               >
-                <Icon size={18} className={cn(isActive ? "text-indigo-200" : "text-indigo-400")} />
-                <span className="font-bold text-sm">{room.name}</span>
-                {room.id !== "all" && (
-                  <Star 
-                    size={14} 
-                    onClick={(e) => toggleFavoriteRoom(room.id, e)}
-                    className={cn(
-                      "ml-1 transition-colors",
-                      isFav ? "fill-amber-400 text-amber-400" : "text-indigo-200 group-hover:text-indigo-300"
-                    )} 
-                  />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* 4. TASK LIST */}
-      <section className="mt-6 px-6 space-y-4">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">Today's Tasks</h2>
-          <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full uppercase tracking-widest">
-            {selectedDay}
-          </span>
-        </div>
-        
-        <AnimatePresence mode="popLayout">
-          {filteredTasks.length > 0 ? (
-            filteredTasks.map((task) => {
-              const user = USERS.find(u => u.id === task.assignedTo);
-              const isFav = favoriteTasks.includes(task.id);
-              const room = ROOMS.find(r => r.id === task.roomId);
-
-              return (
-                <motion.div
-                  key={task.id}
-                  layout
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="bg-white p-5 rounded-[2rem] border border-indigo-50 shadow-sm hover:shadow-md transition-shadow group"
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded-md">
-                          {room?.name}
-                        </span>
-                        <button onClick={() => toggleFavoriteTask(task.id)}>
-                          <Star 
-                            size={16} 
-                            className={cn(
-                              "transition-all active:scale-125",
-                              isFav ? "fill-amber-400 text-amber-400" : "text-indigo-100 hover:text-indigo-300"
-                            )} 
-                          />
-                        </button>
-                      </div>
-                      <h3 className="font-bold text-lg leading-tight group-hover:text-indigo-600 transition-colors">
-                        {task.title}
-                      </h3>
-                    </div>
-                    <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shadow-sm", user?.color)}>
-                      {user?.avatar}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between mt-6">
-                    <div className="flex items-center gap-4 text-indigo-400">
-                      <div className="flex items-center gap-1.5 text-xs font-bold">
-                        <Clock size={14} />
-                        {task.duration}
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => {
-                        setRating(0);
-                        setCompletingTask(task);
-                      }}
-                      className="bg-[#88A47C] hover:bg-[#748D69] text-white px-6 py-2.5 rounded-2xl font-bold text-sm shadow-lg shadow-green-100 transition-all active:scale-95 flex items-center gap-2"
-                    >
-                      <CheckCircle2 size={16} />
-                      Done
-                    </button>
-                  </div>
-                </motion.div>
-              );
-            })
-          ) : (
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }}
-              className="py-12 flex flex-col items-center text-center opacity-40"
-            >
-              <div className="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mb-4">
-                <Search size={24} />
+                <Icon size={22} className={accent.text} />
               </div>
-              <p className="font-bold">No tasks found for this selection</p>
-              <p className="text-sm">Enjoy your free time!</p>
+              <h3 className="font-black text-lg mb-2">{feature.title}</h3>
+              <p className="text-indigo-600/70 font-medium text-sm leading-relaxed">
+                {feature.description}
+              </p>
             </motion.div>
-          )}
-        </AnimatePresence>
-      </section>
+          );
+        })}
+      </motion.div>
+    </section>
+  );
+}
 
-      {/* 5. COMPLETE TASK MODAL (Drawer) */}
-      <AnimatePresence>
-        {completingTask && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setCompletingTask(null)}
-              className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-40"
-            />
-            
-            {/* Drawer */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[3rem] p-8 z-50 shadow-2xl max-w-lg mx-auto border-t border-indigo-50"
-            >
-              <div className="w-12 h-1.5 bg-indigo-100 rounded-full mx-auto mb-8" />
-              
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h2 className="text-2xl font-black mb-1">Finish Task</h2>
-                  <p className="text-indigo-400 font-bold">{completingTask.title}</p>
-                </div>
-                <button 
-                  onClick={() => setCompletingTask(null)}
-                  className="p-2 hover:bg-indigo-50 rounded-full transition-colors"
-                >
-                  <X size={20} className="text-indigo-300" />
-                </button>
-              </div>
+function HowItWorks() {
+  const steps = [
+    {
+      number: "01",
+      title: "Add your rooms & tasks",
+      description: "Set up the chores that matter to your household in seconds.",
+    },
+    {
+      number: "02",
+      title: "Assign to the team",
+      description: "Give every task an owner so responsibilities are always clear.",
+    },
+    {
+      number: "03",
+      title: "Check off & track effort",
+      description: "Mark tasks done, rate the effort, and watch the home run smoother.",
+    },
+  ];
 
-              <div className="space-y-6">
-                {/* Duration Input */}
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                    Actual Minutes Taken
-                  </label>
-                  <div className="relative">
-                    <input 
-                      type="number" 
-                      placeholder="e.g. 20"
-                      className="w-full bg-indigo-50/50 border-2 border-transparent focus:border-indigo-600 focus:bg-white outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
-                    />
-                    <div className="absolute right-5 top-1/2 -translate-y-1/2 text-indigo-400 font-bold">min</div>
-                  </div>
-                </div>
+  return (
+    <section className="bg-white border-y border-indigo-50">
+      <div className="max-w-6xl mx-auto px-6 py-20 md:py-28">
+        <motion.h2
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-80px" }}
+          transition={{ duration: 0.5 }}
+          className="text-3xl md:text-4xl font-black tracking-tight text-center mb-14"
+        >
+          Up and running in three steps
+        </motion.h2>
 
-                {/* Rating */}
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-3 ml-1">
-                    Effort / Satisfaction
-                  </label>
-                  <div className="flex justify-between px-2">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button 
-                        key={star} 
-                        onClick={() => setRating(star)}
-                        className="p-2 hover:scale-125 transition-transform active:scale-90"
-                      >
-                        <Star 
-                          size={32} 
-                          className={cn(
-                            "transition-colors",
-                            rating >= star ? "fill-amber-400 text-amber-400" : "text-indigo-100 hover:text-amber-200"
-                          )} 
-                        />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Notes */}
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                    Notes
-                  </label>
-                  <div className="relative">
-                    <textarea 
-                      placeholder="Any issues or things to note?"
-                      rows={3}
-                      className="w-full bg-indigo-50/50 border-2 border-transparent focus:border-indigo-600 focus:bg-white outline-none rounded-2xl px-5 py-4 font-bold transition-all resize-none"
-                    />
-                    <MessageSquare size={20} className="absolute right-5 top-5 text-indigo-200" />
-                  </div>
-                </div>
-
-                {/* Submit */}
-                <button 
-                  onClick={() => setCompletingTask(null)}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-5 rounded-[2rem] font-black text-lg shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] mt-4"
-                >
-                  Submit Completion
-                </button>
-              </div>
+        <motion.div
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true, margin: "-80px" }}
+          variants={stagger}
+          className="grid md:grid-cols-3 gap-8"
+        >
+          {steps.map((step) => (
+            <motion.div key={step.number} variants={fadeUp} className="relative">
+              <span className="text-5xl font-black text-indigo-100">
+                {step.number}
+              </span>
+              <h3 className="font-black text-xl mt-3 mb-2">{step.title}</h3>
+              <p className="text-indigo-600/70 font-medium text-sm leading-relaxed">
+                {step.description}
+              </p>
             </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+          ))}
+        </motion.div>
+      </div>
+    </section>
+  );
+}
 
-      <style jsx global>{`
-        .scrollbar-hide::-webkit-scrollbar {
-          display: none;
-        }
-        .scrollbar-hide {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-      `}</style>
+function CtaBanner() {
+  return (
+    <section className="max-w-6xl mx-auto px-6 py-20 md:py-28">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-80px" }}
+        transition={{ duration: 0.5 }}
+        className="relative overflow-hidden bg-indigo-600 rounded-[2.5rem] px-8 py-14 md:py-20 text-center shadow-2xl shadow-indigo-200"
+      >
+        <div className="absolute -top-16 -left-16 w-56 h-56 bg-amber-300/20 rounded-full blur-3xl" />
+        <div className="absolute -bottom-16 -right-16 w-56 h-56 bg-[#88A47C]/30 rounded-full blur-3xl" />
+
+        <div className="relative">
+          <h2 className="text-3xl md:text-4xl font-black tracking-tight text-white mb-4">
+            Ready to get your household in sync?
+          </h2>
+          <p className="text-indigo-100 font-medium max-w-lg mx-auto mb-8">
+            Join the households turning chore chaos into a shared, satisfying
+            routine.
+          </p>
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-2 bg-white text-indigo-600 font-black px-8 py-4 rounded-2xl shadow-xl transition-all active:scale-95 hover:bg-amber-50"
+          >
+            Get Started
+            <ArrowRight size={18} />
+          </Link>
+        </div>
+      </motion.div>
+    </section>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="border-t border-indigo-50">
+      <div className="max-w-6xl mx-auto px-6 py-10 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <Logo />
+        <p className="text-sm font-medium text-indigo-400">
+          &copy; {new Date().getFullYear()} Chorez. Made for happier homes.
+        </p>
+      </div>
+    </footer>
+  );
+}
+
+export default function LandingPage() {
+  return (
+    <div className="min-h-screen bg-[#FDFCF0] text-[#2D336B] font-sans selection:bg-indigo-100">
+      <Navbar />
+      <Hero />
+      <RoomStrip />
+      <Features />
+      <HowItWorks />
+      <CtaBanner />
+      <Footer />
     </div>
   );
 }
