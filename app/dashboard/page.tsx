@@ -3,12 +3,10 @@
 import React, { useState, useMemo } from "react";
 import { 
   Plus, 
-  Calendar, 
-  CheckCircle2, 
+  CheckCircle2,
   Star, 
   Clock, 
   User as UserIcon, 
-  ChevronRight, 
   X,
   Bath,
   Armchair,
@@ -221,7 +219,7 @@ export default function HouseholdDashboard() {
       {/* 4. TASK LIST */}
       <section className="mt-6 px-6 space-y-4">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">Today's Tasks</h2>
+          <h2 className="text-xl font-bold">Today&apos;s Tasks</h2>
           <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full uppercase tracking-widest">
             {selectedDay}
           </span>
