@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { useUser } from "@auth0/nextjs-auth0/client";
+import { updateUserName } from "@/lib/actions/user-actions";
 import { 
   Plus, 
   CheckCircle2,
@@ -16,7 +17,9 @@ import {
   Sparkles,
   Search,
   MessageSquare,
-  LogOut
+  LogOut,
+  Settings,
+  Loader2
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx, type ClassValue } from "clsx";
@@ -110,15 +113,25 @@ type Task = (typeof MOCK_TASKS)[number];
  * COMPONENTS 
  */
 
-export default function DashboardClient() {
+interface DashboardClientProps {
+  initialDbUser?: {
+    full_name?: string | null;
+    email?: string;
+  } | null;
+}
+
+export default function DashboardClient({ initialDbUser }: DashboardClientProps) {
   const { user } = useUser();
-  const userName = user?.given_name || user?.name;
+  const userName = initialDbUser?.full_name || user?.given_name || user?.name;
   const [selectedDay, setSelectedDay] = useState("Tue");
   const [selectedRoom, setSelectedRoom] = useState("all");
   const [favoriteRooms, setFavoriteRooms] = useState<string[]>(["kitchen"]);
   const [favoriteTasks, setFavoriteTasks] = useState<string[]>(["t1"]);
   const [completingTask, setCompletingTask] = useState<Task | null>(null);
   const [rating, setRating] = useState(0);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [profileName, setProfileName] = useState(userName ?? "");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // Derived state
   const filteredTasks = useMemo(() => {
@@ -142,6 +155,23 @@ export default function DashboardClient() {
     );
   };
 
+  const openProfileSettings = () => {
+    setProfileName(userName ?? "");
+    setIsProfileOpen(true);
+  };
+
+  const handleSaveProfile = async () => {
+    const trimmedName = profileName.trim();
+    if (!trimmedName) return;
+    setIsSavingProfile(true);
+    try {
+      await updateUserName(trimmedName);
+      setIsProfileOpen(false);
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#FDFCF0] text-[#2D336B] pb-20 font-sans selection:bg-indigo-100">
       {/* 1. HEADER */}
@@ -154,6 +184,14 @@ export default function DashboardClient() {
             <p className="text-indigo-600/70 font-medium">You have <span className="text-indigo-600 font-bold">{filteredTasks.length} tasks</span> left today.</p>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={openProfileSettings}
+              aria-label="Profile Settings"
+              title="Profile Settings"
+              className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+            >
+              <Settings size={18} />
+            </button>
             <a
               href="/auth/logout"
               aria-label="Log Out"
@@ -420,6 +458,98 @@ export default function DashboardClient() {
                 >
                   Submit Completion
                 </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* 6. PROFILE SETTINGS MODAL */}
+      <AnimatePresence>
+        {isProfileOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsProfileOpen(false)}
+              className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-40"
+            />
+
+            {/* Modal */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-6"
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl border border-indigo-50"
+              >
+                <div className="flex justify-between items-start mb-6">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                      <Settings size={22} />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-black">Profile Settings</h2>
+                      <p className="text-indigo-400 text-sm font-bold">Update your details</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsProfileOpen(false)}
+                    className="p-2 hover:bg-indigo-50 rounded-full transition-colors"
+                  >
+                    <X size={20} className="text-indigo-300" />
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                  {/* Full Name Input */}
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
+                      Full Name
+                    </label>
+                    <div className="relative">
+                      <UserIcon size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-indigo-300" />
+                      <input
+                        type="text"
+                        value={profileName}
+                        onChange={(e) => setProfileName(e.target.value)}
+                        placeholder="Your name"
+                        className="w-full bg-indigo-50/50 border-2 border-transparent focus:border-indigo-600 focus:bg-white outline-none rounded-2xl pl-12 pr-5 py-4 font-bold text-lg transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => setIsProfileOpen(false)}
+                      disabled={isSavingProfile}
+                      className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 py-4 rounded-2xl font-black transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveProfile}
+                      disabled={isSavingProfile || !profileName.trim()}
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                    >
+                      {isSavingProfile ? (
+                        <>
+                          <Loader2 size={18} className="animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        "Save Changes"
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
             </motion.div>
           </>
