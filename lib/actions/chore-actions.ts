@@ -95,6 +95,19 @@ export async function addChore(data: {
   revalidatePath("/dashboard");
 }
 
+export async function assignTaskToSelf(assignmentId: string) {
+  const dbUser = await getDbUser();
+  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
+
+  await sql`
+    UPDATE chore_assignments
+    SET assigned_user_id = ${dbUser.id}
+    WHERE id = ${assignmentId} AND household_id = ${dbUser.active_household_id}
+  `;
+
+  revalidatePath("/dashboard");
+}
+
 export async function addRoom(data: {
   name: string;
   icon_name: string;

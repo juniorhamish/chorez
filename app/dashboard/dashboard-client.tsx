@@ -4,7 +4,7 @@ import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@auth0/nextjs-auth0/client";
 import { updateUserName, inviteUser, respondToInvitation, switchHousehold } from "@/lib/actions/user-actions";
-import { addChore, addRoom, completeTask } from "@/lib/actions/chore-actions";
+import { addChore, addRoom, completeTask, assignTaskToSelf } from "@/lib/actions/chore-actions";
 import { 
   Plus, 
   CheckCircle2,
@@ -235,6 +235,7 @@ export default function DashboardClient({
   const [actualMinutes, setActualMinutes] = useState("");
   const [completionNotes, setCompletionNotes] = useState("");
   const [isCompletingTask, setIsCompletingTask] = useState(false);
+  const [isAssigningTask, setIsAssigningTask] = useState<string | null>(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [profileName, setProfileName] = useState(userName ?? "");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -477,6 +478,16 @@ export default function DashboardClient({
       router.refresh();
     } finally {
       setIsCompletingTask(false);
+    }
+  };
+
+  const handleAssignToSelf = async (assignmentId: string) => {
+    setIsAssigningTask(assignmentId);
+    try {
+      await assignTaskToSelf(assignmentId);
+      router.refresh();
+    } finally {
+      setIsAssigningTask(null);
     }
   };
 
@@ -911,13 +922,29 @@ export default function DashboardClient({
                           {durationLabel}
                         </div>
                       </div>
-                      <button 
-                        onClick={() => openCompleteTask(task)}
-                        className="bg-[#88A47C] hover:bg-[#748D69] text-white px-6 py-2.5 rounded-2xl font-bold text-sm shadow-lg shadow-green-100 transition-all active:scale-95 flex items-center gap-2"
-                      >
-                        <CheckCircle2 size={16} />
-                        Done
-                      </button>
+                      <div className="flex gap-2">
+                        {!task.assigned_user_id && (
+                          <button 
+                            onClick={() => handleAssignToSelf(task.id)}
+                            disabled={isAssigningTask === task.id}
+                            className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-4 py-2.5 rounded-2xl font-bold text-sm transition-all active:scale-95 flex items-center gap-2 disabled:opacity-50"
+                          >
+                            {isAssigningTask === task.id ? (
+                              <Loader2 size={16} className="animate-spin" />
+                            ) : (
+                              <UserIcon size={16} />
+                            )}
+                            Assign to Me
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => openCompleteTask(task)}
+                          className="bg-[#88A47C] hover:bg-[#748D69] text-white px-6 py-2.5 rounded-2xl font-bold text-sm shadow-lg shadow-green-100 transition-all active:scale-95 flex items-center gap-2"
+                        >
+                          <CheckCircle2 size={16} />
+                          Done
+                        </button>
+                      </div>
                     </div>
                   )}
                 </motion.div>
