@@ -139,6 +139,10 @@ export interface Task {
   assigned_user_name: string | null;
   assigned_user_avatar: string | null;
   assigned_user_color: string | null;
+  completed_at: string | Date | null;
+  actual_duration_minutes: number | null;
+  effort_rating: number | null;
+  notes: string | null;
 }
 
 export interface Room {
@@ -254,7 +258,7 @@ export default function DashboardClient({
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskRoomId, setNewTaskRoomId] = useState("");
   const [newTaskDuration, setNewTaskDuration] = useState("");
-  const [newTaskLastCompleted, setNewTaskLastCompleted] = useState(() => new Date().toISOString().split("T")[0]);
+  const [newTaskLastCompleted, setNewTaskLastCompleted] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [newTaskFrequency, setNewTaskFrequency] = useState<'daily' | 'weekly' | 'monthly' | 'on-demand'>('weekly');
   const [isAddingTask, setIsAddingTask] = useState(false);
 
@@ -395,7 +399,7 @@ export default function DashboardClient({
     setNewTaskTitle("");
     setNewTaskRoomId(selectableRooms[0]?.id ?? "");
     setNewTaskDuration("");
-    setNewTaskLastCompleted(new Date().toISOString().split("T")[0]);
+    setNewTaskLastCompleted(new Date().toLocaleDateString('en-CA'));
     setNewTaskFrequency('weekly');
     setIsAddTaskOpen(true);
   };
@@ -465,8 +469,9 @@ export default function DashboardClient({
     try {
       await completeTask(completingTask.id, {
         actual_duration_minutes: Number(actualMinutes) || 0,
-        effort_rating: rating,
+        effort_rating: rating > 0 ? rating : undefined,
         notes: completionNotes.trim() || undefined,
+        completionDate: new Date().toLocaleDateString('en-CA'),
       });
       setCompletingTask(null);
       router.refresh();
@@ -803,10 +808,15 @@ export default function DashboardClient({
           {filteredTasks.length > 0 ? (
             filteredTasks.map((task) => {
               const isFav = favoriteTasks.includes(task.id);
+              const isCompleted = task.status === 'completed';
               const avatarColor = task.assigned_user_color || "bg-indigo-100 text-indigo-700";
               const durationLabel = task.estimated_duration_minutes != null
                 ? `${task.estimated_duration_minutes}m`
                 : "—";
+              
+              const completedAtTime = task.completed_at 
+                ? new Date(task.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : null;
 
               return (
                 <motion.div
@@ -815,7 +825,12 @@ export default function DashboardClient({
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
-                  className="bg-white p-5 rounded-4xl border border-indigo-50 shadow-sm hover:shadow-md transition-shadow group"
+                  className={cn(
+                    "p-5 rounded-4xl border transition-all group",
+                    isCompleted 
+                      ? "bg-indigo-50/30 border-indigo-100 opacity-80" 
+                      : "bg-white border-indigo-50 shadow-sm hover:shadow-md"
+                  )}
                 >
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex-1">
@@ -823,17 +838,28 @@ export default function DashboardClient({
                         <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded-md">
                           {task.room_name ?? "No Room"}
                         </span>
-                        <button onClick={() => toggleFavoriteTask(task.id)}>
-                          <Star 
-                            size={16} 
-                            className={cn(
-                              "transition-all active:scale-125",
-                              isFav ? "fill-amber-400 text-amber-400" : "text-indigo-100 hover:text-indigo-300"
-                            )} 
-                          />
-                        </button>
+                        {!isCompleted && (
+                          <button onClick={() => toggleFavoriteTask(task.id)}>
+                            <Star 
+                              size={16} 
+                              className={cn(
+                                "transition-all active:scale-125",
+                                isFav ? "fill-amber-400 text-amber-400" : "text-indigo-100 hover:text-indigo-300"
+                              )} 
+                            />
+                          </button>
+                        )}
+                        {isCompleted && (
+                          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md flex items-center gap-1">
+                            <Check size={10} />
+                            Done
+                          </span>
+                        )}
                       </div>
-                      <h3 className="font-bold text-lg leading-tight group-hover:text-indigo-600 transition-colors">
+                      <h3 className={cn(
+                        "font-bold text-lg leading-tight transition-colors",
+                        isCompleted ? "text-indigo-900/60" : "group-hover:text-indigo-600"
+                      )}>
                         {task.title}
                       </h3>
                     </div>
@@ -841,29 +867,59 @@ export default function DashboardClient({
                       <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shadow-sm", avatarColor)}>
                         {task.assigned_user_avatar ?? "?"}
                       </div>
-                      {viewMode === 'household' && (
-                        <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-tighter">
-                          {task.assigned_user_name ?? "Unassigned"}
-                        </span>
-                      )}
+                      <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-tighter">
+                        {isCompleted ? (
+                          <>Completed by {task.assigned_user_name?.split(' ')[0] ?? "User"}</>
+                        ) : (
+                          task.assigned_user_name ?? "Unassigned"
+                        )}
+                      </span>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between mt-6">
-                    <div className="flex items-center gap-4 text-indigo-400">
-                      <div className="flex items-center gap-1.5 text-xs font-bold">
-                        <Clock size={14} />
-                        {durationLabel}
+                  {isCompleted && (
+                    <div className="mt-4 space-y-3 p-4 bg-white/50 rounded-2xl border border-indigo-50/50">
+                      <div className="flex items-center justify-between text-xs font-bold text-indigo-400">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1">
+                            <Clock size={12} />
+                            Took {task.actual_duration_minutes}m
+                          </div>
+                          {completedAtTime && (
+                            <div className="flex items-center gap-1">
+                              <Star size={12} className="text-amber-400 fill-amber-400" />
+                              {task.effort_rating}/5
+                            </div>
+                          )}
+                        </div>
+                        <div suppressHydrationWarning className="text-[10px] uppercase tracking-wider">{completedAtTime}</div>
                       </div>
+                      {task.notes && (
+                        <div className="flex gap-2 text-sm text-indigo-600/70 italic bg-indigo-50/30 p-2 rounded-xl">
+                          <MessageSquare size={14} className="shrink-0 mt-0.5 opacity-50" />
+                          <p className="leading-tight">{task.notes}</p>
+                        </div>
+                      )}
                     </div>
-                    <button 
-                      onClick={() => openCompleteTask(task)}
-                      className="bg-[#88A47C] hover:bg-[#748D69] text-white px-6 py-2.5 rounded-2xl font-bold text-sm shadow-lg shadow-green-100 transition-all active:scale-95 flex items-center gap-2"
-                    >
-                      <CheckCircle2 size={16} />
-                      Done
-                    </button>
-                  </div>
+                  )}
+
+                  {!isCompleted && (
+                    <div className="flex items-center justify-between mt-6">
+                      <div className="flex items-center gap-4 text-indigo-400">
+                        <div className="flex items-center gap-1.5 text-xs font-bold">
+                          <Clock size={14} />
+                          {durationLabel}
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => openCompleteTask(task)}
+                        className="bg-[#88A47C] hover:bg-[#748D69] text-white px-6 py-2.5 rounded-2xl font-bold text-sm shadow-lg shadow-green-100 transition-all active:scale-95 flex items-center gap-2"
+                      >
+                        <CheckCircle2 size={16} />
+                        Done
+                      </button>
+                    </div>
+                  )}
                 </motion.div>
               );
             })

@@ -25,6 +25,10 @@ export async function getHouseholdTasks() {
       ca.assigned_user_id,
       ca.due_date,
       ca.status,
+      ca.completed_at,
+      ca.actual_duration_minutes,
+      ca.effort_rating,
+      ca.notes,
       c.title,
       c.estimated_duration_minutes,
       r.name as room_name,
@@ -113,14 +117,26 @@ export async function addRoom(data: {
 
 export async function completeTask(assignmentId: string, data: {
   actual_duration_minutes: number;
-  effort_rating: number;
+  effort_rating?: number;
   notes?: string;
+  completionDate?: string; // Optional YYYY-MM-DD from client to handle timezones correctly
 }) {
   const dbUser = await getDbUser();
   if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
 
-  const { actual_duration_minutes, effort_rating, notes } = data;
+  const { actual_duration_minutes, effort_rating, notes, completionDate: clientCompletionDate } = data;
 
+  // 1. Get assignment and chore details
+  const assignment = (await sql`
+    SELECT ca.*, c.frequency 
+    FROM chore_assignments ca
+    JOIN chores c ON ca.chore_id = c.id
+    WHERE ca.id = ${assignmentId} AND ca.household_id = ${dbUser.active_household_id}
+  `)[0];
+
+  if (!assignment) throw new Error("Assignment not found");
+
+  // 2. Mark current assignment as completed
   await sql`
     UPDATE chore_assignments
     SET 
@@ -128,12 +144,32 @@ export async function completeTask(assignmentId: string, data: {
       completed_at = CURRENT_TIMESTAMP,
       actual_duration_minutes = ${actual_duration_minutes},
       effort_rating = ${effort_rating},
-      notes = ${notes}
-    WHERE id = ${assignmentId} AND household_id = ${dbUser.active_household_id}
+      notes = ${notes},
+      assigned_user_id = ${dbUser.id}
+    WHERE id = ${assignmentId}
   `;
 
-  // Optional: Create the next assignment based on frequency
-  // For now, let's just mark it as complete.
+  // 3. Create next assignment if it's a repeated task
+  const { chore_id, frequency } = assignment;
+  if (frequency && frequency !== 'on-demand') {
+    // Use client-provided date if available, otherwise fallback to server local "day"
+    // Note: Parsing YYYY-MM-DD string creates a Date at 00:00:00 UTC
+    const completionDate = clientCompletionDate 
+      ? new Date(clientCompletionDate) 
+      : new Date();
+    
+    const nextDueDate = new Date(completionDate);
+
+    if (frequency === 'daily') nextDueDate.setDate(completionDate.getDate() + 1);
+    else if (frequency === 'weekly') nextDueDate.setDate(completionDate.getDate() + 7);
+    else if (frequency === 'monthly') nextDueDate.setMonth(completionDate.getMonth() + 1);
+
+    await sql`
+      INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
+      VALUES (${chore_id}, ${dbUser.active_household_id}, ${nextDueDate.toISOString().split('T')[0]}, 'pending')
+      ON CONFLICT DO NOTHING
+    `;
+  }
 
   revalidatePath("/dashboard");
 }
