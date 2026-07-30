@@ -1,27 +1,21 @@
 "use server";
 
-import { auth0 } from "@/lib/auth0";
 import { sql } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { getDbUser } from "./user-actions";
 
 export async function getRooms() {
-  const session = await auth0.getSession();
-  if (!session) return [];
-
-  const dbUser = await getDbUserByEmail(session.user.email);
-  if (!dbUser) return [];
+  const dbUser = await getDbUser();
+  if (!dbUser || !dbUser.active_household_id) return [];
 
   return await sql`
-    SELECT * FROM rooms WHERE household_id = ${dbUser.household_id} ORDER BY name ASC
+    SELECT * FROM rooms WHERE household_id = ${dbUser.active_household_id} ORDER BY name ASC
   `;
 }
 
 export async function getHouseholdTasks() {
-  const session = await auth0.getSession();
-  if (!session) return [];
-
-  const dbUser = await getDbUserByEmail(session.user.email);
-  if (!dbUser) return [];
+  const dbUser = await getDbUser();
+  if (!dbUser || !dbUser.active_household_id) return [];
 
   // Fetch chore assignments with chore and room details
   return await sql`
@@ -42,22 +36,19 @@ export async function getHouseholdTasks() {
     JOIN chores c ON ca.chore_id = c.id
     LEFT JOIN rooms r ON c.room_id = r.id
     LEFT JOIN users u ON ca.assigned_user_id = u.id
-    WHERE ca.household_id = ${dbUser.household_id}
+    WHERE ca.household_id = ${dbUser.active_household_id}
     ORDER BY ca.due_date ASC
   `;
 }
 
 export async function getHouseholdUsers() {
-    const session = await auth0.getSession();
-    if (!session) return [];
-  
-    const dbUser = await getDbUserByEmail(session.user.email);
-    if (!dbUser) return [];
+    const dbUser = await getDbUser();
+    if (!dbUser || !dbUser.active_household_id) return [];
   
     return await sql`
       SELECT id, full_name as name, avatar_label as avatar, color_theme as color 
       FROM users 
-      WHERE household_id = ${dbUser.household_id}
+      WHERE id IN (SELECT user_id FROM household_members WHERE household_id = ${dbUser.active_household_id})
     `;
 }
 
@@ -68,18 +59,15 @@ export async function addChore(data: {
   last_completed_date: string;
   frequency: 'daily' | 'weekly' | 'monthly' | 'on-demand';
 }) {
-  const session = await auth0.getSession();
-  if (!session) throw new Error("Not authenticated");
-
-  const dbUser = await getDbUserByEmail(session.user.email);
-  if (!dbUser) throw new Error("User not found in DB");
+  const dbUser = await getDbUser();
+  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
 
   const { title, room_id, estimated_duration_minutes, last_completed_date, frequency } = data;
 
   // 1. Create the chore template
   const newChore = await sql`
     INSERT INTO chores (household_id, room_id, title, estimated_duration_minutes, frequency)
-    VALUES (${dbUser.household_id}, ${room_id}, ${title}, ${estimated_duration_minutes}, ${frequency})
+    VALUES (${dbUser.active_household_id}, ${room_id}, ${title}, ${estimated_duration_minutes}, ${frequency})
     RETURNING id
   `;
 
@@ -97,7 +85,7 @@ export async function addChore(data: {
   // 3. Create initial assignment (unassigned for now, or assigned to creator?)
   await sql`
     INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
-    VALUES (${choreId}, ${dbUser.household_id}, ${dueDate.toISOString().split('T')[0]}, 'pending')
+    VALUES (${choreId}, ${dbUser.active_household_id}, ${dueDate.toISOString().split('T')[0]}, 'pending')
   `;
 
   revalidatePath("/dashboard");
@@ -107,17 +95,14 @@ export async function addRoom(data: {
   name: string;
   icon_name: string;
 }) {
-  const session = await auth0.getSession();
-  if (!session) throw new Error("Not authenticated");
-
-  const dbUser = await getDbUserByEmail(session.user.email);
-  if (!dbUser) throw new Error("User not found in DB");
+  const dbUser = await getDbUser();
+  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
 
   const { name, icon_name } = data;
 
   const newRoom = await sql`
     INSERT INTO rooms (household_id, name, icon_name)
-    VALUES (${dbUser.household_id}, ${name}, ${icon_name})
+    VALUES (${dbUser.active_household_id}, ${name}, ${icon_name})
     RETURNING id
   `;
 
@@ -131,11 +116,8 @@ export async function completeTask(assignmentId: string, data: {
   effort_rating: number;
   notes?: string;
 }) {
-  const session = await auth0.getSession();
-  if (!session) throw new Error("Not authenticated");
-
-  const dbUser = await getDbUserByEmail(session.user.email);
-  if (!dbUser) throw new Error("User not found in DB");
+  const dbUser = await getDbUser();
+  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
 
   const { actual_duration_minutes, effort_rating, notes } = data;
 
@@ -147,7 +129,7 @@ export async function completeTask(assignmentId: string, data: {
       actual_duration_minutes = ${actual_duration_minutes},
       effort_rating = ${effort_rating},
       notes = ${notes}
-    WHERE id = ${assignmentId} AND household_id = ${dbUser.household_id}
+    WHERE id = ${assignmentId} AND household_id = ${dbUser.active_household_id}
   `;
 
   // Optional: Create the next assignment based on frequency
@@ -156,8 +138,3 @@ export async function completeTask(assignmentId: string, data: {
   revalidatePath("/dashboard");
 }
 
-async function getDbUserByEmail(email: string | undefined) {
-  if (!email) return null;
-  const users = await sql`SELECT * FROM users WHERE email = ${email} LIMIT 1`;
-  return users[0] || null;
-}

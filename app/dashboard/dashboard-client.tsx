@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@auth0/nextjs-auth0/client";
-import { updateUserName } from "@/lib/actions/user-actions";
+import { updateUserName, inviteUser, respondToInvitation, switchHousehold } from "@/lib/actions/user-actions";
 import { addChore, addRoom, completeTask } from "@/lib/actions/chore-actions";
 import { 
   Plus, 
@@ -24,6 +24,9 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  Check,
+  Mail,
   type LucideIcon
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -157,6 +160,21 @@ export interface DbUser {
   id?: string;
   full_name?: string | null;
   email?: string;
+  active_household_id?: string | null;
+}
+
+export interface Invitation {
+  id: string;
+  household_id: string;
+  household_name: string;
+  inviter_name: string;
+  status: 'pending' | 'accepted' | 'declined';
+}
+
+export interface Household {
+  id: string;
+  name: string;
+  role: 'admin' | 'member';
 }
 
 /** 
@@ -168,6 +186,8 @@ interface DashboardClientProps {
   initialTasks?: Task[];
   initialRooms?: Room[];
   initialUsers?: HouseholdUser[];
+  initialHouseholds?: Household[];
+  initialInvitations?: Invitation[];
 }
 
 export default function DashboardClient({
@@ -175,6 +195,8 @@ export default function DashboardClient({
   initialTasks,
   initialRooms,
   initialUsers,
+  initialHouseholds,
+  initialInvitations,
 }: Readonly<DashboardClientProps>) {
   const { user } = useUser();
   const router = useRouter();
@@ -188,6 +210,15 @@ export default function DashboardClient({
   );
   const selectableRooms = initialRooms ?? [];
   const users = useMemo(() => initialUsers ?? [], [initialUsers]);
+  const households = useMemo(() => initialHouseholds ?? [], [initialHouseholds]);
+  const invitations = useMemo(
+    () => (initialInvitations ?? []).filter((inv) => inv.status === "pending"),
+    [initialInvitations]
+  );
+  const activeHousehold = useMemo(
+    () => households.find((h) => h.id === initialDbUser?.active_household_id) ?? null,
+    [households, initialDbUser]
+  );
 
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getStartOfWeek(new Date()));
   const weekDays = useMemo(() => getWeekDays(currentWeekStart), [currentWeekStart]);
@@ -204,6 +235,19 @@ export default function DashboardClient({
   const [profileName, setProfileName] = useState(userName ?? "");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [viewMode, setViewMode] = useState<'mine' | 'household'>('mine');
+
+  // Household switcher state
+  const [isHouseholdMenuOpen, setIsHouseholdMenuOpen] = useState(false);
+  const [switchingHouseholdId, setSwitchingHouseholdId] = useState<string | null>(null);
+
+  // Invitation banner state
+  const [respondingInvitationId, setRespondingInvitationId] = useState<string | null>(null);
+
+  // Invite Member modal state
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [isInviting, setIsInviting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   // Add Task form state
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
@@ -299,6 +343,54 @@ export default function DashboardClient({
     }
   };
 
+  const handleSwitchHousehold = async (householdId: string) => {
+    if (householdId === activeHousehold?.id) {
+      setIsHouseholdMenuOpen(false);
+      return;
+    }
+    setSwitchingHouseholdId(householdId);
+    try {
+      await switchHousehold(householdId);
+      setIsHouseholdMenuOpen(false);
+      router.refresh();
+    } finally {
+      setSwitchingHouseholdId(null);
+    }
+  };
+
+  const handleRespondInvitation = async (invitationId: string, status: 'accepted' | 'declined') => {
+    setRespondingInvitationId(invitationId);
+    try {
+      await respondToInvitation(invitationId, status);
+      router.refresh();
+    } finally {
+      setRespondingInvitationId(null);
+    }
+  };
+
+  const openInviteMember = () => {
+    setInviteEmail("");
+    setInviteError(null);
+    setIsInviteOpen(true);
+  };
+
+  const isInviteValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail.trim());
+
+  const handleInviteSubmit = async () => {
+    if (!isInviteValid) return;
+    setIsInviting(true);
+    setInviteError(null);
+    try {
+      await inviteUser(inviteEmail.trim());
+      setIsInviteOpen(false);
+      router.refresh();
+    } catch (err) {
+      setInviteError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setIsInviting(false);
+    }
+  };
+
   const openAddTask = () => {
     setNewTaskTitle("");
     setNewTaskRoomId(selectableRooms[0]?.id ?? "");
@@ -385,6 +477,70 @@ export default function DashboardClient({
 
   return (
     <div className="min-h-screen bg-[#FDFCF0] text-[#2D336B] pb-20 font-sans selection:bg-indigo-100">
+      {/* 0. PENDING INVITATIONS BANNER */}
+      <AnimatePresence initial={false}>
+        {invitations.length > 0 && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ type: "spring", damping: 26, stiffness: 220 }}
+            className="overflow-hidden"
+          >
+            <div className="px-6 pt-6 space-y-3 bg-gradient-to-b from-indigo-900 to-indigo-800">
+              {invitations.map((invitation) => {
+                const isResponding = respondingInvitationId === invitation.id;
+                return (
+                  <motion.div
+                    key={invitation.id}
+                    layout
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="relative overflow-hidden bg-white/10 border border-white/15 rounded-3xl p-5 pb-4 backdrop-blur-sm"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="w-11 h-11 shrink-0 rounded-2xl bg-amber-300 text-indigo-900 flex items-center justify-center shadow-lg">
+                        <Mail size={20} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-black leading-snug">
+                          Join &ldquo;{invitation.household_name}&rdquo;
+                        </p>
+                        <p className="text-indigo-200 text-sm font-medium">
+                          {invitation.inviter_name} invited you to their household.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-3 mt-4">
+                      <button
+                        onClick={() => handleRespondInvitation(invitation.id, 'declined')}
+                        disabled={isResponding}
+                        className="flex-1 bg-white/10 hover:bg-white/20 text-indigo-100 py-2.5 rounded-2xl font-bold text-sm transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Decline
+                      </button>
+                      <button
+                        onClick={() => handleRespondInvitation(invitation.id, 'accepted')}
+                        disabled={isResponding}
+                        className="flex-1 bg-amber-300 hover:bg-amber-200 text-indigo-900 py-2.5 rounded-2xl font-black text-sm shadow-lg shadow-black/10 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {isResponding ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          <Check size={16} />
+                        )}
+                        Accept
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* 1. HEADER */}
       <header className="px-6 pt-10 pb-6 bg-white/50 backdrop-blur-md sticky top-0 z-10 border-b border-indigo-50">
         <div className="flex justify-between items-start mb-4">
@@ -399,6 +555,66 @@ export default function DashboardClient({
                 <>Household has <span className="text-indigo-600 font-bold">{filteredTasks.length} tasks</span> today.</>
               )}
             </p>
+            {households.length > 1 && (
+              <div className="relative mt-2 inline-block">
+                <button
+                  onClick={() => setIsHouseholdMenuOpen((prev) => !prev)}
+                  className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-indigo-500 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-full transition-colors"
+                >
+                  <Home size={12} />
+                  {activeHousehold?.name ?? "Select Household"}
+                  <ChevronDown
+                    size={12}
+                    className={cn("transition-transform", isHouseholdMenuOpen && "rotate-180")}
+                  />
+                </button>
+                <AnimatePresence>
+                  {isHouseholdMenuOpen && (
+                    <>
+                      <div
+                        onClick={() => setIsHouseholdMenuOpen(false)}
+                        className="fixed inset-0 z-20"
+                      />
+                      <motion.div
+                        initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute left-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-indigo-50 p-2 z-30"
+                      >
+                        {households.map((household) => {
+                          const isActive = household.id === activeHousehold?.id;
+                          const isSwitching = switchingHouseholdId === household.id;
+                          return (
+                            <button
+                              key={household.id}
+                              onClick={() => handleSwitchHousehold(household.id)}
+                              disabled={isSwitching}
+                              className={cn(
+                                "w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-left transition-colors disabled:opacity-50",
+                                isActive ? "bg-indigo-600 text-white" : "hover:bg-indigo-50 text-indigo-700"
+                              )}
+                            >
+                              <span className="min-w-0">
+                                <span className="block font-bold text-sm truncate">{household.name}</span>
+                                <span className={cn("block text-[10px] uppercase tracking-widest font-bold", isActive ? "text-indigo-200" : "text-indigo-400")}>
+                                  {household.role}
+                                </span>
+                              </span>
+                              {isSwitching ? (
+                                <Loader2 size={14} className="animate-spin shrink-0" />
+                              ) : isActive ? (
+                                <Check size={14} className="shrink-0" />
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -428,7 +644,10 @@ export default function DashboardClient({
             </button>
           </div>
         </div>
-        <button className="flex items-center gap-2 text-sm font-semibold bg-white border border-indigo-100 px-4 py-2 rounded-2xl shadow-sm hover:border-indigo-200 transition-colors w-full justify-center">
+        <button
+          onClick={openInviteMember}
+          className="flex items-center gap-2 text-sm font-semibold bg-white border border-indigo-100 px-4 py-2 rounded-2xl shadow-sm hover:border-indigo-200 transition-colors w-full justify-center"
+        >
           <UserIcon size={16} className="text-indigo-400" />
           Invite Member
         </button>
@@ -1129,6 +1348,95 @@ export default function DashboardClient({
                     </button>
                   </div>
                 </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* 9. INVITE MEMBER MODAL (Drawer) */}
+      <AnimatePresence>
+        {isInviteOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !isInviting && setIsInviteOpen(false)}
+              className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-40"
+            />
+
+            {/* Drawer */}
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[3rem] p-8 z-50 shadow-2xl max-w-lg mx-auto border-t border-indigo-50"
+            >
+              <div className="w-12 h-1.5 bg-indigo-100 rounded-full mx-auto mb-8" />
+
+              <div className="flex justify-between items-start mb-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                    <UserIcon size={22} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black">Invite Member</h2>
+                    <p className="text-indigo-400 text-sm font-bold">
+                      {activeHousehold ? `Add someone to "${activeHousehold.name}"` : "Add someone to your household"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsInviteOpen(false)}
+                  disabled={isInviting}
+                  className="p-2 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
+                >
+                  <X size={20} className="text-indigo-300" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {/* Invitee Email */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
+                    Invitee Email
+                  </label>
+                  <div className="relative">
+                    <Mail size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-indigo-300" />
+                    <input
+                      type="email"
+                      placeholder="name@example.com"
+                      value={inviteEmail}
+                      onChange={(e) => {
+                        setInviteEmail(e.target.value);
+                        setInviteError(null);
+                      }}
+                      className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl pl-12 pr-5 py-4 font-bold text-lg transition-all"
+                    />
+                  </div>
+                  {inviteError && (
+                    <p className="text-rose-500 text-sm font-bold mt-2 ml-1">{inviteError}</p>
+                  )}
+                </div>
+
+                {/* Submit */}
+                <button
+                  onClick={handleInviteSubmit}
+                  disabled={isInviting || !isInviteValid}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-5 rounded-4xl font-black text-lg shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] mt-4 flex items-center justify-center gap-2"
+                >
+                  {isInviting ? (
+                    <>
+                      <Loader2 size={20} className="animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    "Send Invite"
+                  )}
+                </button>
               </div>
             </motion.div>
           </>
