@@ -34,6 +34,13 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
 /** 
  * MOCK DATA 
  */
@@ -157,9 +164,11 @@ interface DashboardClientProps {
   } | null;
 }
 
-export default function DashboardClient({ initialDbUser }: DashboardClientProps) {
+export default function DashboardClient({ initialDbUser }: Readonly<DashboardClientProps>) {
   const { user } = useUser();
   const userName = initialDbUser?.full_name || user?.given_name || user?.name;
+  const greeting = getGreeting();
+
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getStartOfWeek(new Date()));
   const weekDays = useMemo(() => getWeekDays(currentWeekStart), [currentWeekStart]);
   const [selectedDay, setSelectedDay] = useState("Tue");
@@ -255,8 +264,8 @@ export default function DashboardClient({ initialDbUser }: DashboardClientProps)
       <header className="px-6 pt-10 pb-6 bg-white/50 backdrop-blur-md sticky top-0 z-10 border-b border-indigo-50">
         <div className="flex justify-between items-start mb-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              Good morning{userName ? `, ${userName}` : ''}! 👋
+            <h1 suppressHydrationWarning className="text-2xl font-bold tracking-tight">
+              {greeting}{userName ? `, ${userName}` : ''}! 👋
             </h1>
             <p className="text-indigo-600/70 font-medium">
               {viewMode === 'mine' ? (
@@ -364,7 +373,7 @@ export default function DashboardClient({ initialDbUser }: DashboardClientProps)
               key={day.label}
               onClick={() => setSelectedDay(day.label)}
               className={cn(
-                "flex flex-col items-center min-w-[70px] py-4 rounded-3xl transition-all snap-center",
+                "flex flex-col items-center min-w-17.5 py-4 rounded-3xl transition-all snap-center",
                 selectedDay === day.label 
                   ? "bg-indigo-600 text-white shadow-xl shadow-indigo-200 scale-105" 
                   : "bg-white text-indigo-400 border border-indigo-50"
@@ -442,7 +451,7 @@ export default function DashboardClient({ initialDbUser }: DashboardClientProps)
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
-                  className="bg-white p-5 rounded-[2rem] border border-indigo-50 shadow-sm hover:shadow-md transition-shadow group"
+                  className="bg-white p-5 rounded-4xl border border-indigo-50 shadow-sm hover:shadow-md transition-shadow group"
                 >
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex-1">
@@ -559,7 +568,7 @@ export default function DashboardClient({ initialDbUser }: DashboardClientProps)
                     <input 
                       type="number" 
                       placeholder="e.g. 20"
-                      className="w-full bg-indigo-50/50 border-2 border-transparent focus:border-indigo-600 focus:bg-white outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
+                      className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
                     />
                     <div className="absolute right-5 top-1/2 -translate-y-1/2 text-indigo-400 font-bold">min</div>
                   </div>
@@ -598,7 +607,7 @@ export default function DashboardClient({ initialDbUser }: DashboardClientProps)
                     <textarea 
                       placeholder="Any issues or things to note?"
                       rows={3}
-                      className="w-full bg-indigo-50/50 border-2 border-transparent focus:border-indigo-600 focus:bg-white outline-none rounded-2xl px-5 py-4 font-bold transition-all resize-none"
+                      className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold transition-all resize-none"
                     />
                     <MessageSquare size={20} className="absolute right-5 top-5 text-indigo-200" />
                   </div>
@@ -607,7 +616,7 @@ export default function DashboardClient({ initialDbUser }: DashboardClientProps)
                 {/* Submit */}
                 <button 
                   onClick={() => setCompletingTask(null)}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-5 rounded-[2rem] font-black text-lg shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] mt-4"
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-5 rounded-4xl font-black text-lg shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] mt-4"
                 >
                   Submit Completion
                 </button>
@@ -639,7 +648,6 @@ export default function DashboardClient({ initialDbUser }: DashboardClientProps)
               className="fixed inset-0 z-50 flex items-center justify-center p-6"
             >
               <div
-                onClick={(e) => e.stopPropagation()}
                 className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl border border-indigo-50"
               >
                 <div className="flex justify-between items-start mb-6">
@@ -673,7 +681,7 @@ export default function DashboardClient({ initialDbUser }: DashboardClientProps)
                         value={profileName}
                         onChange={(e) => setProfileName(e.target.value)}
                         placeholder="Your name"
-                        className="w-full bg-indigo-50/50 border-2 border-transparent focus:border-indigo-600 focus:bg-white outline-none rounded-2xl pl-12 pr-5 py-4 font-bold text-lg transition-all"
+                        className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl pl-12 pr-5 py-4 font-bold text-lg transition-all"
                       />
                     </div>
                   </div>
