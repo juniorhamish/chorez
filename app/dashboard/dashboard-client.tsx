@@ -281,6 +281,10 @@ export default function DashboardClient({
     });
   }, [tasks, selectedDay, selectedRoom, viewMode, initialDbUser]);
 
+  const incompleteTasksCount = useMemo(() => {
+    return filteredTasks.filter(task => task.status !== 'completed').length;
+  }, [filteredTasks]);
+
   const goToPreviousWeek = () => {
     setCurrentWeekStart(prev => {
       const next = new Date(prev);
@@ -566,9 +570,9 @@ export default function DashboardClient({
             </h1>
             <p className="text-indigo-600/70 font-medium">
               {viewMode === 'mine' ? (
-                <>You have <span className="text-indigo-600 font-bold">{filteredTasks.length} tasks</span> left today.</>
+                <>You have <span className="text-indigo-600 font-bold">{incompleteTasksCount} tasks</span> left today.</>
               ) : (
-                <>Household has <span className="text-indigo-600 font-bold">{filteredTasks.length} tasks</span> today.</>
+                <>Household has <span className="text-indigo-600 font-bold">{incompleteTasksCount} tasks</span> today.</>
               )}
             </p>
             {households.length > 1 && (
