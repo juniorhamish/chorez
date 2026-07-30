@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useUser } from "@auth0/nextjs-auth0/client";
 import { updateUserName } from "@/lib/actions/user-actions";
+import { addChore, addRoom, completeTask } from "@/lib/actions/chore-actions";
 import { 
   Plus, 
   CheckCircle2,
@@ -21,7 +23,8 @@ import {
   Settings,
   Loader2,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  type LucideIcon
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx, type ClassValue } from "clsx";
@@ -41,27 +44,36 @@ function getGreeting() {
   return "Good evening";
 }
 
-/** 
- * MOCK DATA 
+/**
+ * Maps a room's `icon_name` (stored in the DB) to a Lucide icon component.
+ * Falls back to `Home` when the name is missing or unrecognized.
  */
-const USERS = [
-  { id: "u1", name: "Alex", avatar: "A", color: "bg-indigo-100 text-indigo-700" },
-  { id: "u2", name: "Jordan", avatar: "J", color: "bg-rose-100 text-rose-700" },
-  { id: "u3", name: "Sam", avatar: "S", color: "bg-amber-100 text-amber-700" },
-];
+const ICON_MAP: Record<string, LucideIcon> = {
+  Home,
+  UtensilsCrossed,
+  Bath,
+  Armchair,
+  Sparkles,
+};
 
-const ROOMS = [
-  { id: "all", name: "All", icon: Home },
-  { id: "kitchen", name: "Kitchen", icon: UtensilsCrossed },
-  { id: "bathroom", name: "Bathroom", icon: Bath },
-  { id: "living-room", name: "Living Room", icon: Armchair },
-  { id: "bedroom", name: "Bedroom", icon: Sparkles },
-];
+function getRoomIcon(iconName?: string | null): LucideIcon {
+  if (!iconName) return Home;
+  return ICON_MAP[iconName] ?? Home;
+}
+
+const ICON_OPTIONS = Object.keys(ICON_MAP);
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+const FREQUENCY_OPTIONS: { value: 'daily' | 'weekly' | 'monthly' | 'on-demand'; label: string }[] = [
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "on-demand", label: "On Demand" },
 ];
 
 /**
@@ -89,6 +101,10 @@ function formatDayDate(date: Date) {
   return `${MONTH_LABELS[date.getMonth()]} ${String(date.getDate()).padStart(2, "0")}`;
 }
 
+function getDayLabel(date: Date) {
+  return DAY_LABELS[(date.getDay() + 6) % 7];
+}
+
 /** Builds the 7 days (Mon-Sun) for the week starting at `weekStart`. */
 function getWeekDays(weekStart: Date) {
   const today = new Date();
@@ -98,99 +114,123 @@ function getWeekDays(weekStart: Date) {
     return {
       label: DAY_LABELS[i],
       date: formatDayDate(date),
+      fullDate: date,
       isToday: isSameDay(date, today),
     };
   });
 }
 
-const MOCK_TASKS = [
-  { 
-    id: "t1", 
-    title: "Deep clean oven", 
-    roomId: "kitchen", 
-    duration: "45m", 
-    assignedTo: "u1", 
-    isFavorite: true,
-    day: "Tue"
-  },
-  { 
-    id: "t2", 
-    title: "Mop bathroom floor", 
-    roomId: "bathroom", 
-    duration: "15m", 
-    assignedTo: "u2", 
-    isFavorite: false,
-    day: "Tue"
-  },
-  { 
-    id: "t3", 
-    title: "Water the plants", 
-    roomId: "living-room", 
-    duration: "10m", 
-    assignedTo: "u3", 
-    isFavorite: false,
-    day: "Tue"
-  },
-  { 
-    id: "t4", 
-    title: "Vacuum living room", 
-    roomId: "living-room", 
-    duration: "20m", 
-    assignedTo: "u1", 
-    isFavorite: true,
-    day: "Wed"
-  },
-  { 
-    id: "t5", 
-    title: "Take out recycling", 
-    roomId: "kitchen", 
-    duration: "5m", 
-    assignedTo: "u2", 
-    isFavorite: false,
-    day: "Tue"
-  },
-];
+/** 
+ * TYPES 
+ */
+export interface Task {
+  id: string;
+  chore_id: string;
+  assigned_user_id: string | null;
+  due_date: string | Date;
+  status: string;
+  title: string;
+  estimated_duration_minutes: number | null;
+  room_name: string | null;
+  room_id: string | null;
+  assigned_user_name: string | null;
+  assigned_user_avatar: string | null;
+  assigned_user_color: string | null;
+}
 
-type Task = (typeof MOCK_TASKS)[number];
+export interface Room {
+  id: string;
+  household_id?: string;
+  name: string;
+  icon_name?: string | null;
+  created_at?: string;
+}
+
+export interface HouseholdUser {
+  id: string;
+  name: string | null;
+  avatar: string | null;
+  color: string | null;
+}
+
+export interface DbUser {
+  id?: string;
+  full_name?: string | null;
+  email?: string;
+}
 
 /** 
  * COMPONENTS 
  */
 
 interface DashboardClientProps {
-  initialDbUser?: {
-    full_name?: string | null;
-    email?: string;
-  } | null;
+  initialDbUser?: DbUser | null;
+  initialTasks?: Task[];
+  initialRooms?: Room[];
+  initialUsers?: HouseholdUser[];
 }
 
-export default function DashboardClient({ initialDbUser }: Readonly<DashboardClientProps>) {
+export default function DashboardClient({
+  initialDbUser,
+  initialTasks,
+  initialRooms,
+  initialUsers,
+}: Readonly<DashboardClientProps>) {
   const { user } = useUser();
+  const router = useRouter();
   const userName = initialDbUser?.full_name || user?.given_name || user?.name;
   const greeting = getGreeting();
 
+  const tasks = useMemo(() => initialTasks ?? [], [initialTasks]);
+  const rooms = useMemo<Room[]>(
+    () => [{ id: "all", name: "All", icon_name: null }, ...(initialRooms ?? [])],
+    [initialRooms]
+  );
+  const selectableRooms = initialRooms ?? [];
+  const users = useMemo(() => initialUsers ?? [], [initialUsers]);
+
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getStartOfWeek(new Date()));
   const weekDays = useMemo(() => getWeekDays(currentWeekStart), [currentWeekStart]);
-  const [selectedDay, setSelectedDay] = useState("Tue");
+  const [selectedDay, setSelectedDay] = useState<Date>(() => new Date());
   const [selectedRoom, setSelectedRoom] = useState("all");
-  const [favoriteRooms, setFavoriteRooms] = useState<string[]>(["kitchen"]);
-  const [favoriteTasks, setFavoriteTasks] = useState<string[]>(["t1"]);
+  const [favoriteRooms, setFavoriteRooms] = useState<string[]>([]);
+  const [favoriteTasks, setFavoriteTasks] = useState<string[]>([]);
   const [completingTask, setCompletingTask] = useState<Task | null>(null);
   const [rating, setRating] = useState(0);
+  const [actualMinutes, setActualMinutes] = useState("");
+  const [completionNotes, setCompletionNotes] = useState("");
+  const [isCompletingTask, setIsCompletingTask] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [profileName, setProfileName] = useState(userName ?? "");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [viewMode, setViewMode] = useState<'mine' | 'household'>('mine');
 
+  // Add Task form state
+  const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskRoomId, setNewTaskRoomId] = useState("");
+  const [newTaskDuration, setNewTaskDuration] = useState("");
+  const [newTaskLastCompleted, setNewTaskLastCompleted] = useState(() => new Date().toISOString().split("T")[0]);
+  const [newTaskFrequency, setNewTaskFrequency] = useState<'daily' | 'weekly' | 'monthly' | 'on-demand'>('weekly');
+  const [isAddingTask, setIsAddingTask] = useState(false);
+
+  // Add Room form state
+  const [isAddRoomOpen, setIsAddRoomOpen] = useState(false);
+  const [isAddRoomFromTask, setIsAddRoomFromTask] = useState(false);
+  const [newRoomName, setNewRoomName] = useState("");
+  const [newRoomIconName, setNewRoomIconName] = useState<string>(ICON_OPTIONS[0]);
+  const [isAddingRoom, setIsAddingRoom] = useState(false);
+
   // Derived state
   const filteredTasks = useMemo(() => {
-    return MOCK_TASKS.filter(task => {
-      const dayMatch = task.day === selectedDay;
-      const roomMatch = selectedRoom === "all" || task.roomId === selectedRoom;
-      const assignmentMatch = viewMode === 'household' || task.assignedTo === 'u1';
+    return tasks.filter(task => {
+      const dueDate = task.due_date ? new Date(task.due_date) : null;
+      const dayMatch = !!dueDate && isSameDay(dueDate, selectedDay);
+      const roomMatch = selectedRoom === "all" || task.room_id === selectedRoom;
+      const assignmentMatch = viewMode === 'household' || task.assigned_user_id === initialDbUser?.id;
       return dayMatch && roomMatch && assignmentMatch;
     });
-  }, [selectedDay, selectedRoom, viewMode]);
+  }, [tasks, selectedDay, selectedRoom, viewMode, initialDbUser]);
 
   const goToPreviousWeek = () => {
     setCurrentWeekStart(prev => {
@@ -253,8 +293,93 @@ export default function DashboardClient({ initialDbUser }: Readonly<DashboardCli
     try {
       await updateUserName(trimmedName);
       setIsProfileOpen(false);
+      router.refresh();
     } finally {
       setIsSavingProfile(false);
+    }
+  };
+
+  const openAddTask = () => {
+    setNewTaskTitle("");
+    setNewTaskRoomId(selectableRooms[0]?.id ?? "");
+    setNewTaskDuration("");
+    setNewTaskLastCompleted(new Date().toISOString().split("T")[0]);
+    setNewTaskFrequency('weekly');
+    setIsAddTaskOpen(true);
+  };
+
+  const isAddTaskValid =
+    newTaskTitle.trim().length > 0 &&
+    newTaskRoomId.length > 0 &&
+    Number(newTaskDuration) > 0 &&
+    !!newTaskLastCompleted;
+
+  const handleAddTask = async () => {
+    if (!isAddTaskValid) return;
+    setIsAddingTask(true);
+    try {
+      await addChore({
+        title: newTaskTitle.trim(),
+        room_id: newTaskRoomId,
+        estimated_duration_minutes: Number(newTaskDuration),
+        last_completed_date: newTaskLastCompleted,
+        frequency: newTaskFrequency,
+      });
+      setIsAddTaskOpen(false);
+      router.refresh();
+    } finally {
+      setIsAddingTask(false);
+    }
+  };
+
+  const openAddRoom = (fromTask: boolean) => {
+    setNewRoomName("");
+    setNewRoomIconName(ICON_OPTIONS[0]);
+    setIsAddRoomFromTask(fromTask);
+    setIsAddRoomOpen(true);
+  };
+
+  const isAddRoomValid = newRoomName.trim().length > 0 && !!newRoomIconName;
+
+  const handleAddRoom = async () => {
+    if (!isAddRoomValid) return;
+    setIsAddingRoom(true);
+    try {
+      const newRoom = await addRoom({
+        name: newRoomName.trim(),
+        icon_name: newRoomIconName,
+      });
+      if (isAddRoomFromTask) {
+        // Auto-select the freshly created room back in the Add Task form.
+        setNewTaskRoomId(newRoom.id);
+      }
+      setIsAddRoomOpen(false);
+      router.refresh();
+    } finally {
+      setIsAddingRoom(false);
+    }
+  };
+
+  const openCompleteTask = (task: Task) => {
+    setRating(0);
+    setActualMinutes("");
+    setCompletionNotes("");
+    setCompletingTask(task);
+  };
+
+  const handleSubmitCompletion = async () => {
+    if (!completingTask) return;
+    setIsCompletingTask(true);
+    try {
+      await completeTask(completingTask.id, {
+        actual_duration_minutes: Number(actualMinutes) || 0,
+        effort_rating: rating,
+        notes: completionNotes.trim() || undefined,
+      });
+      setCompletingTask(null);
+      router.refresh();
+    } finally {
+      setIsCompletingTask(false);
     }
   };
 
@@ -293,7 +418,12 @@ export default function DashboardClient({ initialDbUser }: Readonly<DashboardCli
               <LogOut size={18} />
             </a>
             <div aria-hidden="true" className="w-px h-6 bg-indigo-100" />
-            <button className="p-2 bg-indigo-600 text-white rounded-full shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95">
+            <button
+              onClick={openAddTask}
+              aria-label="Add Task"
+              title="Add Task"
+              className="p-2 bg-indigo-600 text-white rounded-full shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95"
+            >
               <Plus size={24} />
             </button>
           </div>
@@ -325,6 +455,7 @@ export default function DashboardClient({ initialDbUser }: Readonly<DashboardCli
           </button>
           <button
             onClick={() => setViewMode('household')}
+            title={`${users.length} household member${users.length === 1 ? "" : "s"}`}
             className={cn(
               "flex-1 py-2 text-sm font-black rounded-xl transition-colors relative z-10",
               viewMode === 'household' ? "text-indigo-600" : "text-indigo-400 hover:text-indigo-500"
@@ -368,33 +499,36 @@ export default function DashboardClient({ initialDbUser }: Readonly<DashboardCli
           </button>
         </div>
         <div className="flex gap-4 overflow-x-auto px-6 pb-4 scrollbar-hide snap-x">
-          {weekDays.map((day) => (
-            <button
-              key={day.label}
-              onClick={() => setSelectedDay(day.label)}
-              className={cn(
-                "flex flex-col items-center min-w-17.5 py-4 rounded-3xl transition-all snap-center",
-                selectedDay === day.label 
-                  ? "bg-indigo-600 text-white shadow-xl shadow-indigo-200 scale-105" 
-                  : "bg-white text-indigo-400 border border-indigo-50"
-              )}
-            >
-              <span className="text-xs font-bold uppercase tracking-wider mb-1">{day.label}</span>
-              <span className="text-lg font-bold">{day.date.split(" ")[1]}</span>
-              {day.isToday && selectedDay !== day.label && (
-                <div className="w-1 h-1 bg-indigo-600 rounded-full mt-1" />
-              )}
-            </button>
-          ))}
+          {weekDays.map((day) => {
+            const isSelected = isSameDay(day.fullDate, selectedDay);
+            return (
+              <button
+                key={day.date}
+                onClick={() => setSelectedDay(day.fullDate)}
+                className={cn(
+                  "flex flex-col items-center min-w-17.5 py-4 rounded-3xl transition-all snap-center",
+                  isSelected
+                    ? "bg-indigo-600 text-white shadow-xl shadow-indigo-200 scale-105" 
+                    : "bg-white text-indigo-400 border border-indigo-50"
+                )}
+              >
+                <span className="text-xs font-bold uppercase tracking-wider mb-1">{day.label}</span>
+                <span className="text-lg font-bold">{day.date.split(" ")[1]}</span>
+                {day.isToday && !isSelected && (
+                  <div className="w-1 h-1 bg-indigo-600 rounded-full mt-1" />
+                )}
+              </button>
+            );
+          })}
         </div>
       </section>
 
       {/* 3. ROOM TABS / CATEGORIES */}
       <section className="mt-8 px-6">
         <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
-          {ROOMS.map((room) => {
+          {rooms.map((room) => {
             const isFav = favoriteRooms.includes(room.id);
-            const Icon = room.icon;
+            const Icon = getRoomIcon(room.icon_name);
             const isActive = selectedRoom === room.id;
             
             return (
@@ -423,6 +557,15 @@ export default function DashboardClient({ initialDbUser }: Readonly<DashboardCli
               </button>
             );
           })}
+          <button
+            onClick={() => openAddRoom(false)}
+            aria-label="Add Room"
+            title="Add Room"
+            className="flex items-center gap-2 px-4 py-3 rounded-2xl border border-dashed border-indigo-200 text-indigo-400 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/50 transition-all whitespace-nowrap"
+          >
+            <Plus size={18} />
+            <span className="font-bold text-sm">Add Room</span>
+          </button>
         </div>
       </section>
 
@@ -433,16 +576,18 @@ export default function DashboardClient({ initialDbUser }: Readonly<DashboardCli
             {viewMode === 'mine' ? "My Tasks" : "Household Tasks"}
           </h2>
           <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full uppercase tracking-widest">
-            {selectedDay}
+            {getDayLabel(selectedDay)}
           </span>
         </div>
         
         <AnimatePresence mode="popLayout">
           {filteredTasks.length > 0 ? (
             filteredTasks.map((task) => {
-              const user = USERS.find(u => u.id === task.assignedTo);
               const isFav = favoriteTasks.includes(task.id);
-              const room = ROOMS.find(r => r.id === task.roomId);
+              const avatarColor = task.assigned_user_color || "bg-indigo-100 text-indigo-700";
+              const durationLabel = task.estimated_duration_minutes != null
+                ? `${task.estimated_duration_minutes}m`
+                : "—";
 
               return (
                 <motion.div
@@ -457,7 +602,7 @@ export default function DashboardClient({ initialDbUser }: Readonly<DashboardCli
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded-md">
-                          {room?.name}
+                          {task.room_name ?? "No Room"}
                         </span>
                         <button onClick={() => toggleFavoriteTask(task.id)}>
                           <Star 
@@ -474,12 +619,12 @@ export default function DashboardClient({ initialDbUser }: Readonly<DashboardCli
                       </h3>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shadow-sm", user?.color)}>
-                        {user?.avatar}
+                      <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shadow-sm", avatarColor)}>
+                        {task.assigned_user_avatar ?? "?"}
                       </div>
                       {viewMode === 'household' && (
                         <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-tighter">
-                          {user?.name}
+                          {task.assigned_user_name ?? "Unassigned"}
                         </span>
                       )}
                     </div>
@@ -489,14 +634,11 @@ export default function DashboardClient({ initialDbUser }: Readonly<DashboardCli
                     <div className="flex items-center gap-4 text-indigo-400">
                       <div className="flex items-center gap-1.5 text-xs font-bold">
                         <Clock size={14} />
-                        {task.duration}
+                        {durationLabel}
                       </div>
                     </div>
                     <button 
-                      onClick={() => {
-                        setRating(0);
-                        setCompletingTask(task);
-                      }}
+                      onClick={() => openCompleteTask(task)}
                       className="bg-[#88A47C] hover:bg-[#748D69] text-white px-6 py-2.5 rounded-2xl font-bold text-sm shadow-lg shadow-green-100 transition-all active:scale-95 flex items-center gap-2"
                     >
                       <CheckCircle2 size={16} />
@@ -531,7 +673,7 @@ export default function DashboardClient({ initialDbUser }: Readonly<DashboardCli
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setCompletingTask(null)}
+              onClick={() => !isCompletingTask && setCompletingTask(null)}
               className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-40"
             />
             
@@ -552,7 +694,8 @@ export default function DashboardClient({ initialDbUser }: Readonly<DashboardCli
                 </div>
                 <button 
                   onClick={() => setCompletingTask(null)}
-                  className="p-2 hover:bg-indigo-50 rounded-full transition-colors"
+                  disabled={isCompletingTask}
+                  className="p-2 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
                 >
                   <X size={20} className="text-indigo-300" />
                 </button>
@@ -568,6 +711,8 @@ export default function DashboardClient({ initialDbUser }: Readonly<DashboardCli
                     <input 
                       type="number" 
                       placeholder="e.g. 20"
+                      value={actualMinutes}
+                      onChange={(e) => setActualMinutes(e.target.value)}
                       className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
                     />
                     <div className="absolute right-5 top-1/2 -translate-y-1/2 text-indigo-400 font-bold">min</div>
@@ -607,6 +752,8 @@ export default function DashboardClient({ initialDbUser }: Readonly<DashboardCli
                     <textarea 
                       placeholder="Any issues or things to note?"
                       rows={3}
+                      value={completionNotes}
+                      onChange={(e) => setCompletionNotes(e.target.value)}
                       className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold transition-all resize-none"
                     />
                     <MessageSquare size={20} className="absolute right-5 top-5 text-indigo-200" />
@@ -615,10 +762,18 @@ export default function DashboardClient({ initialDbUser }: Readonly<DashboardCli
 
                 {/* Submit */}
                 <button 
-                  onClick={() => setCompletingTask(null)}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-5 rounded-4xl font-black text-lg shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] mt-4"
+                  onClick={handleSubmitCompletion}
+                  disabled={isCompletingTask}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-5 rounded-4xl font-black text-lg shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] mt-4 flex items-center justify-center gap-2"
                 >
-                  Submit Completion
+                  {isCompletingTask ? (
+                    <>
+                      <Loader2 size={20} className="animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    "Submit Completion"
+                  )}
                 </button>
               </div>
             </motion.div>
@@ -626,7 +781,270 @@ export default function DashboardClient({ initialDbUser }: Readonly<DashboardCli
         )}
       </AnimatePresence>
 
-      {/* 6. PROFILE SETTINGS MODAL */}
+      {/* 6. ADD TASK MODAL (Drawer) */}
+      <AnimatePresence>
+        {isAddTaskOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !isAddingTask && setIsAddTaskOpen(false)}
+              className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-40"
+            />
+
+            {/* Drawer */}
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[3rem] p-8 z-50 shadow-2xl max-w-lg mx-auto border-t border-indigo-50 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="w-12 h-1.5 bg-indigo-100 rounded-full mx-auto mb-8" />
+
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-2xl font-black mb-1">Add Task</h2>
+                  <p className="text-indigo-400 font-bold">Create a new chore</p>
+                </div>
+                <button
+                  onClick={() => setIsAddTaskOpen(false)}
+                  disabled={isAddingTask}
+                  className="p-2 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
+                >
+                  <X size={20} className="text-indigo-300" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {/* Task Name */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
+                    Task Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Clean the fridge"
+                    value={newTaskTitle}
+                    onChange={(e) => setNewTaskTitle(e.target.value)}
+                    className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
+                  />
+                </div>
+
+                {/* Room */}
+                <div>
+                  <div className="flex items-center justify-between mb-2 ml-1 mr-1">
+                    <label className="block text-xs font-black uppercase tracking-widest text-indigo-400">
+                      Room
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => openAddRoom(true)}
+                      className="flex items-center gap-1 text-xs font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-700 transition-colors"
+                    >
+                      <Plus size={12} />
+                      New Room
+                    </button>
+                  </div>
+                  {selectableRooms.length > 0 ? (
+                    <select
+                      value={newTaskRoomId}
+                      onChange={(e) => setNewTaskRoomId(e.target.value)}
+                      className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all appearance-none"
+                    >
+                      {selectableRooms.map((room) => (
+                        <option key={room.id} value={room.id}>
+                          {room.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openAddRoom(true)}
+                      className="w-full bg-indigo-50/50 hover:bg-indigo-50 rounded-2xl px-5 py-4 font-bold text-indigo-400 hover:text-indigo-600 text-left transition-colors"
+                    >
+                      No rooms yet — tap to add one.
+                    </button>
+                  )}
+                </div>
+
+                {/* Duration */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
+                    Time to Complete
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={1}
+                      placeholder="e.g. 20"
+                      value={newTaskDuration}
+                      onChange={(e) => setNewTaskDuration(e.target.value)}
+                      className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
+                    />
+                    <div className="absolute right-5 top-1/2 -translate-y-1/2 text-indigo-400 font-bold">min</div>
+                  </div>
+                </div>
+
+                {/* Frequency */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
+                    Frequency
+                  </label>
+                  <select
+                    value={newTaskFrequency}
+                    onChange={(e) => setNewTaskFrequency(e.target.value as typeof newTaskFrequency)}
+                    className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all appearance-none"
+                  >
+                    {FREQUENCY_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Last Completed */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
+                    Date Last Completed
+                  </label>
+                  <input
+                    type="date"
+                    value={newTaskLastCompleted}
+                    onChange={(e) => setNewTaskLastCompleted(e.target.value)}
+                    className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
+                  />
+                </div>
+
+                {/* Submit */}
+                <button
+                  onClick={handleAddTask}
+                  disabled={isAddingTask || !isAddTaskValid}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-5 rounded-4xl font-black text-lg shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] mt-4 flex items-center justify-center gap-2"
+                >
+                  {isAddingTask ? (
+                    <>
+                      <Loader2 size={20} className="animate-spin" />
+                      Adding...
+                    </>
+                  ) : (
+                    "Add Task"
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* 7. ADD ROOM MODAL (Drawer) */}
+      <AnimatePresence>
+        {isAddRoomOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !isAddingRoom && setIsAddRoomOpen(false)}
+              className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-[55]"
+            />
+
+            {/* Drawer */}
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[3rem] p-8 z-[60] shadow-2xl max-w-lg mx-auto border-t border-indigo-50 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="w-12 h-1.5 bg-indigo-100 rounded-full mx-auto mb-8" />
+
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-2xl font-black mb-1">Add Room</h2>
+                  <p className="text-indigo-400 font-bold">Create a new space</p>
+                </div>
+                <button
+                  onClick={() => setIsAddRoomOpen(false)}
+                  disabled={isAddingRoom}
+                  className="p-2 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
+                >
+                  <X size={20} className="text-indigo-300" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {/* Room Name */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
+                    Room Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Garage"
+                    value={newRoomName}
+                    onChange={(e) => setNewRoomName(e.target.value)}
+                    className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
+                  />
+                </div>
+
+                {/* Icon Selection */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-3 ml-1">
+                    Icon
+                  </label>
+                  <div className="flex flex-wrap gap-3">
+                    {ICON_OPTIONS.map((iconName) => {
+                      const Icon = ICON_MAP[iconName];
+                      const isSelected = newRoomIconName === iconName;
+                      return (
+                        <button
+                          key={iconName}
+                          type="button"
+                          onClick={() => setNewRoomIconName(iconName)}
+                          aria-label={iconName}
+                          title={iconName}
+                          className={cn(
+                            "w-14 h-14 rounded-2xl flex items-center justify-center border-2 transition-all active:scale-95",
+                            isSelected
+                              ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-200 scale-105"
+                              : "bg-indigo-50/50 border-transparent text-indigo-400 hover:border-indigo-200"
+                          )}
+                        >
+                          <Icon size={22} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Submit */}
+                <button
+                  onClick={handleAddRoom}
+                  disabled={isAddingRoom || !isAddRoomValid}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-5 rounded-4xl font-black text-lg shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] mt-4 flex items-center justify-center gap-2"
+                >
+                  {isAddingRoom ? (
+                    <>
+                      <Loader2 size={20} className="animate-spin" />
+                      Adding...
+                    </>
+                  ) : (
+                    "Add Room"
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* 8. PROFILE SETTINGS MODAL */}
       <AnimatePresence>
         {isProfileOpen && (
           <>
