@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@auth0/nextjs-auth0/client";
 import { updateUserName, inviteUser, respondToInvitation, switchHousehold } from "@/lib/actions/user-actions";
@@ -27,6 +27,8 @@ import {
   ChevronDown,
   Check,
   Mail,
+  Bell,
+  BellOff,
   type LucideIcon
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -269,6 +271,70 @@ export default function DashboardClient({
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomIconName, setNewRoomIconName] = useState<string>(ICON_OPTIONS[0]);
   const [isAddingRoom, setIsAddingRoom] = useState(false);
+
+  // Push notification state
+  const [isPushSupported, setIsPushSupported] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
+
+  // Register Service Worker and check subscription
+  useEffect(() => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      setIsPushSupported(true);
+      navigator.serviceWorker.register('/sw.js')
+        .then(async (reg) => {
+          const sub = await reg.pushManager.getSubscription();
+          setIsSubscribed(!!sub);
+        })
+        .catch(err => console.error('SW registration failed:', err));
+    }
+  }, []);
+
+  const handleEnableNotifications = useCallback(async () => {
+    if (!isPushSupported) return;
+    setIsSubscribing(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        throw new Error('Permission not granted');
+      }
+
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!)
+      });
+
+      await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          subscription,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        }),
+      });
+
+      setIsSubscribed(true);
+    } catch (error) {
+      console.error('Push subscription failed:', error);
+      alert('Failed to enable notifications. Please check your browser settings.');
+    } finally {
+      setIsSubscribing(false);
+    }
+  }, [isPushSupported]);
+
+  function urlBase64ToUint8Array(base64String: string) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
 
   // Derived state
   const filteredTasks = useMemo(() => {
@@ -1409,6 +1475,37 @@ export default function DashboardClient({
                       />
                     </div>
                   </div>
+
+                  {/* Notifications */}
+                  {isPushSupported && (
+                    <div>
+                      <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
+                        Daily Reminders
+                      </label>
+                      <button
+                        onClick={handleEnableNotifications}
+                        disabled={isSubscribing || isSubscribed}
+                        className={cn(
+                          "w-full flex items-center justify-center gap-3 py-4 rounded-2xl font-black transition-all active:scale-[0.98] border-2",
+                          isSubscribed 
+                            ? "bg-emerald-50 border-emerald-100 text-emerald-600 cursor-default" 
+                            : "bg-indigo-50 border-transparent text-indigo-600 hover:bg-indigo-100"
+                        )}
+                      >
+                        {isSubscribing ? (
+                          <Loader2 size={18} className="animate-spin" />
+                        ) : isSubscribed ? (
+                          <Bell size={18} />
+                        ) : (
+                          <BellOff size={18} />
+                        )}
+                        {isSubscribed ? "Notifications Enabled" : "Enable Daily Notifications"}
+                      </button>
+                      <p className="text-[10px] text-indigo-400 mt-2 ml-1 font-bold leading-tight">
+                        Receive a morning task summary and evening reminders for outstanding chores.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Actions */}
                   <div className="flex gap-3 pt-2">
