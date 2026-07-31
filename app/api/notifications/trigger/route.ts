@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   // Simple auth check for the cron job (could be a secret header)
   const authHeader = req.headers.get("authorization");
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: "Unauthorized says Dave" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   // Fetch all users with subscriptions
