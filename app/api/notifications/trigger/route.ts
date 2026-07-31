@@ -10,7 +10,6 @@ webpush.setVapidDetails(
 );
 
 export async function POST(req: Request) {
-  console.log("Cron job triggered notifications");
   // Simple auth check for the cron job (could be a secret header)
   const authHeader = req.headers.get("authorization");
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -38,8 +37,8 @@ export async function POST(req: Request) {
       const hour = parseInt(userTime, 10);
       let type: 'morning' | 'evening' | null = null;
 
-      if (hour === 1) type = 'morning';
-      else if (hour === 20) type = 'evening';
+      if (hour === 8) type = 'morning';
+      else if (hour === 18) type = 'evening';
 
       if (!type) continue;
 
