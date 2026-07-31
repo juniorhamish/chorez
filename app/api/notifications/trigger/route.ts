@@ -38,7 +38,7 @@ export async function POST(req: Request) {
       const hour = parseInt(userTime, 10);
       let type: 'morning' | 'evening' | null = null;
 
-      if (hour === 8) type = 'morning';
+      if (hour === 1) type = 'morning';
       else if (hour === 20) type = 'evening';
 
       if (!type) continue;
