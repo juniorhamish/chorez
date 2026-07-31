@@ -66,9 +66,8 @@ export async function POST(req: Request) {
         continue;
       }
 
-      const subscription = JSON.parse(user.subscription_json);
       await webpush.sendNotification(
-        subscription,
+        user.subscription_json,
         JSON.stringify({
           title: "Chorez Reminder",
           body,
