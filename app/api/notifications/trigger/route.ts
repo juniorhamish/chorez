@@ -10,6 +10,7 @@ webpush.setVapidDetails(
 );
 
 export async function POST(req: Request) {
+  console.log("Cron job triggered notifications");
   // Simple auth check for the cron job (could be a secret header)
   const authHeader = req.headers.get("authorization");
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
