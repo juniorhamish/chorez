@@ -228,7 +228,7 @@ export async function addRoom(data: {
 }
 
 export async function completeTask(assignmentId: string, data: {
-  actual_duration_minutes: number;
+  actual_duration_minutes?: number;
   effort_rating?: number;
   notes?: string;
   completionDate?: string; // Optional YYYY-MM-DD from client to handle timezones correctly
@@ -237,6 +237,7 @@ export async function completeTask(assignmentId: string, data: {
   if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
 
   const { actual_duration_minutes, effort_rating, notes, completionDate: clientCompletionDate } = data;
+  const hasSetTime = actual_duration_minutes !== undefined && actual_duration_minutes !== null && !isNaN(actual_duration_minutes);
 
   // 1. Get assignment and chore details
   const assignment = (await sql`
@@ -254,15 +255,30 @@ export async function completeTask(assignmentId: string, data: {
     SET 
       status = 'completed',
       completed_at = CURRENT_TIMESTAMP,
-      actual_duration_minutes = ${actual_duration_minutes},
+      actual_duration_minutes = ${hasSetTime ? actual_duration_minutes : null},
       effort_rating = ${effort_rating},
       notes = ${notes},
       assigned_user_id = ${dbUser.id}
     WHERE id = ${assignmentId}
   `;
 
-  // 3. Create next assignment if it's a repeated task
+  // 3. If time taken was set, update the chore's estimated duration to the average of all actual durations so far
   const { chore_id, frequency, frequency_interval } = assignment;
+  if (hasSetTime) {
+    await sql`
+      UPDATE chores
+      SET estimated_duration_minutes = (
+        SELECT ROUND(AVG(actual_duration_minutes))::INTEGER
+        FROM chore_assignments
+        WHERE chore_id = ${chore_id}
+          AND status = 'completed'
+          AND actual_duration_minutes IS NOT NULL
+      )
+      WHERE id = ${chore_id}
+    `;
+  }
+
+  // 4. Create next assignment if it's a repeated task
   if (frequency && frequency !== 'on-demand') {
     // Use client-provided date if available, otherwise fallback to server local "day"
     // Note: Parsing YYYY-MM-DD string creates a Date at 00:00:00 UTC

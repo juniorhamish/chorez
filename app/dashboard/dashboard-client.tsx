@@ -675,8 +675,9 @@ export default function DashboardClient({
     if (!completingTask) return;
     setIsCompletingTask(true);
     try {
+      const hasTime = actualMinutes.trim() !== "";
       await completeTask(completingTask.id, {
-        actual_duration_minutes: Number(actualMinutes) || 0,
+        actual_duration_minutes: hasTime ? Number(actualMinutes) : undefined,
         effort_rating: rating > 0 ? rating : undefined,
         notes: completionNotes.trim() || undefined,
         completionDate: new Date().toLocaleDateString('en-CA'),
