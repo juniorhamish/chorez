@@ -354,6 +354,15 @@ export default function DashboardClient({
 
   // Register Service Worker and check subscription
   useEffect(() => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz) {
+        document.cookie = `chorez_timezone=${encodeURIComponent(tz)}; path=/; max-age=31536000; SameSite=Lax`;
+      }
+    } catch {
+      // ignore
+    }
+
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsPushSupported(true);

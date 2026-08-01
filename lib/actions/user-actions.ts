@@ -4,6 +4,7 @@ import { auth0 } from "@/lib/auth0";
 import { sql } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { cache } from "react";
+import { cookies } from "next/headers";
 
 export async function updateUserName(newName: string) {
   const user = await getDbUser();
@@ -86,9 +87,13 @@ export const getDbUser = cache(async () => {
     } else {
       // Create new household, but only if we still don't have one!
       // This query is atomic.
+      const cookieStore = await cookies();
+      const clientTz = cookieStore.get("chorez_timezone")?.value;
+      const timezone = clientTz || "Europe/London";
+
       const newHousehold = await sql`
-        INSERT INTO households (name)
-        SELECT ${name ? `${name}'s Home` : 'My Home'}
+        INSERT INTO households (name, timezone)
+        SELECT ${name ? `${name}'s Home` : 'My Home'}, ${timezone}
         WHERE NOT EXISTS (SELECT 1 FROM household_members WHERE user_id = ${user.id})
         RETURNING id
       `;
