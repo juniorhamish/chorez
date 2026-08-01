@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@auth0/nextjs-auth0/client";
-import { updateUserName, inviteUser, respondToInvitation, switchHousehold } from "@/lib/actions/user-actions";
+import { updateUserName, updateNotificationSchedule, inviteUser, respondToInvitation, switchHousehold } from "@/lib/actions/user-actions";
 import { addChore, addRoom, completeTask, assignTaskToSelf } from "@/lib/actions/chore-actions";
 import { 
   Plus, 
@@ -80,6 +80,15 @@ const FREQUENCY_OPTIONS: { value: 'daily' | 'weekly' | 'monthly' | 'on-demand'; 
   { value: "monthly", label: "Monthly" },
   { value: "on-demand", label: "On Demand" },
 ];
+
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => hour);
+
+/** Formats a 24-hour value (0-23) as a friendly 12-hour clock label, e.g. 8 -> "8:00 AM". */
+function formatHourLabel(hour: number) {
+  const period = hour < 12 ? "AM" : "PM";
+  const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+  return `${displayHour}:00 ${period}`;
+}
 
 /**
  * Returns the Monday of the week containing the given date (native Date only,
@@ -167,6 +176,8 @@ export interface DbUser {
   full_name?: string | null;
   email?: string;
   active_household_id?: string | null;
+  morning_notification_hour?: number | null;
+  evening_notification_hour?: number | null;
 }
 
 export interface Invitation {
@@ -240,6 +251,8 @@ export default function DashboardClient({
   const [isAssigningTask, setIsAssigningTask] = useState<string | null>(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [profileName, setProfileName] = useState(userName ?? "");
+  const [morningNotificationHour, setMorningNotificationHour] = useState(initialDbUser?.morning_notification_hour ?? 8);
+  const [eveningNotificationHour, setEveningNotificationHour] = useState(initialDbUser?.evening_notification_hour ?? 18);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [viewMode, setViewMode] = useState<'mine' | 'household'>('mine');
 
@@ -402,6 +415,8 @@ export default function DashboardClient({
 
   const openProfileSettings = () => {
     setProfileName(userName ?? "");
+    setMorningNotificationHour(initialDbUser?.morning_notification_hour ?? 8);
+    setEveningNotificationHour(initialDbUser?.evening_notification_hour ?? 18);
     setIsProfileOpen(true);
   };
 
@@ -410,7 +425,10 @@ export default function DashboardClient({
     if (!trimmedName) return;
     setIsSavingProfile(true);
     try {
-      await updateUserName(trimmedName);
+      await Promise.all([
+        updateUserName(trimmedName),
+        updateNotificationSchedule(morningNotificationHour, eveningNotificationHour),
+      ]);
       setIsProfileOpen(false);
       router.refresh();
     } finally {
@@ -1504,6 +1522,41 @@ export default function DashboardClient({
                       <p className="text-[10px] text-indigo-400 mt-2 ml-1 font-bold leading-tight">
                         Receive a morning task summary and evening reminders for outstanding chores.
                       </p>
+
+                      <div className="grid grid-cols-2 gap-3 mt-4">
+                        <div>
+                          <label className="block text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
+                            Morning Summary
+                          </label>
+                          <select
+                            value={morningNotificationHour}
+                            onChange={(e) => setMorningNotificationHour(Number(e.target.value))}
+                            className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-4 py-3 font-bold text-sm transition-all"
+                          >
+                            {HOUR_OPTIONS.map((hour) => (
+                              <option key={hour} value={hour}>
+                                {formatHourLabel(hour)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
+                            Evening Reminder
+                          </label>
+                          <select
+                            value={eveningNotificationHour}
+                            onChange={(e) => setEveningNotificationHour(Number(e.target.value))}
+                            className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-4 py-3 font-bold text-sm transition-all"
+                          >
+                            {HOUR_OPTIONS.map((hour) => (
+                              <option key={hour} value={hour}>
+                                {formatHourLabel(hour)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
                     </div>
                   )}
 

@@ -21,6 +21,29 @@ export async function updateUserName(newName: string) {
   revalidatePath("/dashboard");
 }
 
+export async function updateNotificationSchedule(morningHour: number, eveningHour: number) {
+  const user = await getDbUser();
+  if (!user) {
+    throw new Error("User not found or not authenticated");
+  }
+
+  if (
+    !Number.isInteger(morningHour) || morningHour < 0 || morningHour > 23 ||
+    !Number.isInteger(eveningHour) || eveningHour < 0 || eveningHour > 23
+  ) {
+    throw new Error("Notification hours must be integers between 0 and 23");
+  }
+
+  await sql`
+    UPDATE users 
+    SET morning_notification_hour = ${morningHour},
+        evening_notification_hour = ${eveningHour}
+    WHERE id = ${user.id}
+  `;
+
+  revalidatePath("/dashboard");
+}
+
 export const getDbUser = cache(async () => {
   const session = await auth0.getSession();
   if (!session) return null;

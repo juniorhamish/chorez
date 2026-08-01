@@ -18,7 +18,7 @@ export async function POST(req: Request) {
 
   // Fetch all users with subscriptions
   const usersWithSubs = await sql`
-    SELECT u.id, u.full_name, u.timezone, ps.subscription_json
+    SELECT u.id, u.full_name, u.timezone, u.morning_notification_hour, u.evening_notification_hour, ps.subscription_json
     FROM users u
     JOIN push_subscriptions ps ON u.id = ps.user_id
   `;
@@ -35,10 +35,12 @@ export async function POST(req: Request) {
       }).format(now);
 
       const hour = parseInt(userTime, 10);
+      const morningHour = user.morning_notification_hour ?? 8;
+      const eveningHour = user.evening_notification_hour ?? 18;
       let type: 'morning' | 'evening' | null = null;
 
-      if (hour === 8) type = 'morning';
-      else if (hour === 18) type = 'evening';
+      if (hour === morningHour) type = 'morning';
+      else if (hour === eveningHour) type = 'evening';
 
       if (!type) continue;
 
