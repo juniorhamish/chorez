@@ -37,6 +37,7 @@ import {
   Mail,
   Bell,
   BellOff,
+  RefreshCw,
   type LucideIcon
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -423,6 +424,19 @@ export default function DashboardClient({
       setIsSubscribing(false);
     }
   }, [isPushSupported]);
+
+  // Refresh state and handler
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      router.refresh();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Derived state
   const filteredTasks = useMemo(() => {
@@ -827,6 +841,15 @@ export default function DashboardClient({
           </div>
           <div className="flex items-center gap-3">
             <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              aria-label="Refresh Tasks"
+              title="Refresh Tasks"
+              className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={18} className={cn(isRefreshing && "animate-spin")} />
+            </button>
+            <button
               onClick={openProfileSettings}
               aria-label="Profile Settings"
               title="Profile Settings"
@@ -1000,9 +1023,21 @@ export default function DashboardClient({
       {/* 4. TASK LIST */}
       <section className="mt-6 px-6 space-y-4">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">
-            {viewMode === 'mine' ? "My Tasks" : "Household Tasks"}
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold">
+              {viewMode === 'mine' ? "My Tasks" : "Household Tasks"}
+            </h2>
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              aria-label="Refresh tasks"
+              title="Refresh tasks"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-bold transition-all active:scale-95 disabled:opacity-50"
+            >
+              <RefreshCw size={12} className={cn(isRefreshing && "animate-spin")} />
+              <span>Refresh</span>
+            </button>
+          </div>
           <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full uppercase tracking-widest">
             {getDayLabel(selectedDay)}
           </span>
