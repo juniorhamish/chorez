@@ -3,8 +3,8 @@ self.addEventListener('push', function (event) {
     const data = JSON.parse(event.data.text());
     const options = {
       body: data.body,
-      icon: '/favicon.ico', // Make sure this exists
-      badge: '/favicon.ico',
+      icon: '/icon.png', // Make sure this exists
+      badge: '/icon.png',
       data: {
         url: data.url
       }
