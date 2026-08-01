@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@auth0/nextjs-auth0/client";
 import { updateUserName, updateNotificationSchedule, inviteUser, respondToInvitation, switchHousehold } from "@/lib/actions/user-actions";
-import { addChore, addRoom, completeTask, assignTaskToSelf, type ChoreFrequency } from "@/lib/actions/chore-actions";
+import { addChore, addRoom, completeTask, assignTaskToSelf, toggleFavoriteRoom as toggleFavoriteRoomAction, toggleFavoriteChore as toggleFavoriteChoreAction, type ChoreFrequency } from "@/lib/actions/chore-actions";
 import { 
   Plus, 
   CheckCircle2,
@@ -208,6 +208,8 @@ interface DashboardClientProps {
   initialUsers?: HouseholdUser[];
   initialHouseholds?: Household[];
   initialInvitations?: Invitation[];
+  initialFavoriteRoomIds?: string[];
+  initialFavoriteChoreIds?: string[];
 }
 
 export default function DashboardClient({
@@ -217,6 +219,8 @@ export default function DashboardClient({
   initialUsers,
   initialHouseholds,
   initialInvitations,
+  initialFavoriteRoomIds,
+  initialFavoriteChoreIds,
 }: Readonly<DashboardClientProps>) {
   const { user } = useUser();
   const router = useRouter();
@@ -244,8 +248,8 @@ export default function DashboardClient({
   const weekDays = useMemo(() => getWeekDays(currentWeekStart), [currentWeekStart]);
   const [selectedDay, setSelectedDay] = useState<Date>(() => new Date());
   const [selectedRoom, setSelectedRoom] = useState("all");
-  const [favoriteRooms, setFavoriteRooms] = useState<string[]>([]);
-  const [favoriteTasks, setFavoriteTasks] = useState<string[]>([]);
+  const [favoriteRooms, setFavoriteRooms] = useState<string[]>(initialFavoriteRoomIds ?? []);
+  const [favoriteTasks, setFavoriteTasks] = useState<string[]>(initialFavoriteChoreIds ?? []);
   const [completingTask, setCompletingTask] = useState<Task | null>(null);
   const [rating, setRating] = useState(0);
   const [actualMinutes, setActualMinutes] = useState("");
@@ -406,15 +410,29 @@ export default function DashboardClient({
 
   const toggleFavoriteRoom = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const wasFavorite = favoriteRooms.includes(id);
     setFavoriteRooms(prev => 
-      prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]
+      wasFavorite ? prev.filter(r => r !== id) : [...prev, id]
     );
+    toggleFavoriteRoomAction(id).catch(() => {
+      // Revert optimistic update if the request fails
+      setFavoriteRooms(prev => 
+        wasFavorite ? [...prev, id] : prev.filter(r => r !== id)
+      );
+    });
   };
 
-  const toggleFavoriteTask = (id: string) => {
+  const toggleFavoriteTask = (choreId: string) => {
+    const wasFavorite = favoriteTasks.includes(choreId);
     setFavoriteTasks(prev => 
-      prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]
+      wasFavorite ? prev.filter(t => t !== choreId) : [...prev, choreId]
     );
+    toggleFavoriteChoreAction(choreId).catch(() => {
+      // Revert optimistic update if the request fails
+      setFavoriteTasks(prev => 
+        wasFavorite ? [...prev, choreId] : prev.filter(t => t !== choreId)
+      );
+    });
   };
 
   const openProfileSettings = () => {
@@ -915,7 +933,7 @@ export default function DashboardClient({
         <AnimatePresence mode="popLayout">
           {filteredTasks.length > 0 ? (
             filteredTasks.map((task) => {
-              const isFav = favoriteTasks.includes(task.id);
+              const isFav = favoriteTasks.includes(task.chore_id);
               const isCompleted = task.status === 'completed';
               const avatarColor = task.assigned_user_color || "bg-indigo-100 text-indigo-700";
               const durationLabel = task.estimated_duration_minutes != null
@@ -947,7 +965,7 @@ export default function DashboardClient({
                           {task.room_name ?? "No Room"}
                         </span>
                         {!isCompleted && (
-                          <button onClick={() => toggleFavoriteTask(task.id)}>
+                          <button onClick={() => toggleFavoriteTask(task.chore_id)}>
                             <Star 
                               size={16} 
                               className={cn(

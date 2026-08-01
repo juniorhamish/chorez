@@ -72,6 +72,80 @@ export async function getHouseholdTasks() {
   `;
 }
 
+export async function getFavoriteRoomIds() {
+  const dbUser = await getDbUser();
+  if (!dbUser || !dbUser.id) return [];
+
+  const favorites = await sql`
+    SELECT target_id FROM user_favorites
+    WHERE user_id = ${dbUser.id} AND target_type = 'room'
+  `;
+
+  return favorites.map((f) => f.target_id as string);
+}
+
+export async function toggleFavoriteRoom(roomId: string) {
+  const dbUser = await getDbUser();
+  if (!dbUser || !dbUser.id) throw new Error("User not found");
+
+  const existing = await sql`
+    SELECT 1 FROM user_favorites
+    WHERE user_id = ${dbUser.id} AND target_type = 'room' AND target_id = ${roomId}
+  `;
+
+  if (existing.length > 0) {
+    await sql`
+      DELETE FROM user_favorites
+      WHERE user_id = ${dbUser.id} AND target_type = 'room' AND target_id = ${roomId}
+    `;
+  } else {
+    await sql`
+      INSERT INTO user_favorites (user_id, target_type, target_id)
+      VALUES (${dbUser.id}, 'room', ${roomId})
+      ON CONFLICT DO NOTHING
+    `;
+  }
+
+  revalidatePath("/dashboard");
+}
+
+export async function getFavoriteChoreIds() {
+  const dbUser = await getDbUser();
+  if (!dbUser || !dbUser.id) return [];
+
+  const favorites = await sql`
+    SELECT target_id FROM user_favorites
+    WHERE user_id = ${dbUser.id} AND target_type = 'chore'
+  `;
+
+  return favorites.map((f) => f.target_id as string);
+}
+
+export async function toggleFavoriteChore(choreId: string) {
+  const dbUser = await getDbUser();
+  if (!dbUser || !dbUser.id) throw new Error("User not found");
+
+  const existing = await sql`
+    SELECT 1 FROM user_favorites
+    WHERE user_id = ${dbUser.id} AND target_type = 'chore' AND target_id = ${choreId}
+  `;
+
+  if (existing.length > 0) {
+    await sql`
+      DELETE FROM user_favorites
+      WHERE user_id = ${dbUser.id} AND target_type = 'chore' AND target_id = ${choreId}
+    `;
+  } else {
+    await sql`
+      INSERT INTO user_favorites (user_id, target_type, target_id)
+      VALUES (${dbUser.id}, 'chore', ${choreId})
+      ON CONFLICT DO NOTHING
+    `;
+  }
+
+  revalidatePath("/dashboard");
+}
+
 export async function getHouseholdUsers() {
     const dbUser = await getDbUser();
     if (!dbUser || !dbUser.active_household_id) return [];

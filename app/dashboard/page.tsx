@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth0 } from "@/lib/auth0";
 import DashboardClient, { type Task, type Room, type HouseholdUser, type Household, type Invitation } from "./dashboard-client";
 import { getDbUser, getHouseholds, getInvitations } from "@/lib/actions/user-actions";
-import { getHouseholdTasks, getRooms, getHouseholdUsers } from "@/lib/actions/chore-actions";
+import { getHouseholdTasks, getRooms, getHouseholdUsers, getFavoriteRoomIds, getFavoriteChoreIds } from "@/lib/actions/chore-actions";
 
 export default async function DashboardPage() {
   const session = await auth0.getSession();
@@ -11,13 +11,15 @@ export default async function DashboardPage() {
     redirect("/auth/login?returnTo=/dashboard");
   }
 
-  const [dbUser, tasks, rooms, users, households, invitations] = await Promise.all([
+  const [dbUser, tasks, rooms, users, households, invitations, favoriteRoomIds, favoriteChoreIds] = await Promise.all([
     getDbUser(),
     getHouseholdTasks(),
     getRooms(),
     getHouseholdUsers(),
     getHouseholds(),
     getInvitations(),
+    getFavoriteRoomIds(),
+    getFavoriteChoreIds(),
   ]);
 
   return (
@@ -28,6 +30,8 @@ export default async function DashboardPage() {
       initialUsers={users as unknown as HouseholdUser[]}
       initialHouseholds={households as unknown as Household[]}
       initialInvitations={invitations as unknown as Invitation[]}
+      initialFavoriteRoomIds={favoriteRoomIds}
+      initialFavoriteChoreIds={favoriteChoreIds}
     />
   );
 }
