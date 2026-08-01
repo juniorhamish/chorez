@@ -4,6 +4,33 @@ import { sql } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { getDbUser } from "./user-actions";
 
+export type ChoreFrequency =
+  | 'daily'
+  | 'weekly'
+  | 'monthly'
+  | 'yearly'
+  | 'every-x-days'
+  | 'every-x-weeks'
+  | 'on-demand';
+
+function calculateNextDueDate(
+  fromDate: Date,
+  frequency: ChoreFrequency,
+  frequencyInterval: number | null | undefined
+): Date {
+  const nextDate = new Date(fromDate);
+
+  if (frequency === 'daily') nextDate.setDate(fromDate.getDate() + 1);
+  else if (frequency === 'weekly') nextDate.setDate(fromDate.getDate() + 7);
+  else if (frequency === 'monthly') nextDate.setMonth(fromDate.getMonth() + 1);
+  else if (frequency === 'yearly') nextDate.setFullYear(fromDate.getFullYear() + 1);
+  else if (frequency === 'every-x-days') nextDate.setDate(fromDate.getDate() + (frequencyInterval || 1));
+  else if (frequency === 'every-x-weeks') nextDate.setDate(fromDate.getDate() + (frequencyInterval || 1) * 7);
+  else nextDate.setDate(fromDate.getDate() + 1); // Default to next day for on-demand initial? Or same day.
+
+  return nextDate;
+}
+
 export async function getRooms() {
   const dbUser = await getDbUser();
   if (!dbUser || !dbUser.active_household_id) return [];
@@ -61,17 +88,20 @@ export async function addChore(data: {
   room_id: string;
   estimated_duration_minutes: number;
   last_completed_date: string;
-  frequency: 'daily' | 'weekly' | 'monthly' | 'on-demand';
+  frequency: ChoreFrequency;
+  frequency_interval?: number | null;
 }) {
   const dbUser = await getDbUser();
   if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
 
   const { title, room_id, estimated_duration_minutes, last_completed_date, frequency } = data;
+  const frequency_interval =
+    frequency === 'every-x-days' || frequency === 'every-x-weeks' ? data.frequency_interval ?? 1 : null;
 
   // 1. Create the chore template
   const newChore = await sql`
-    INSERT INTO chores (household_id, room_id, title, estimated_duration_minutes, frequency)
-    VALUES (${dbUser.active_household_id}, ${room_id}, ${title}, ${estimated_duration_minutes}, ${frequency})
+    INSERT INTO chores (household_id, room_id, title, estimated_duration_minutes, frequency, frequency_interval)
+    VALUES (${dbUser.active_household_id}, ${room_id}, ${title}, ${estimated_duration_minutes}, ${frequency}, ${frequency_interval})
     RETURNING id
   `;
 
@@ -79,12 +109,7 @@ export async function addChore(data: {
 
   // 2. Calculate next due date
   const lastDate = new Date(last_completed_date);
-  const dueDate = new Date(lastDate);
-  
-  if (frequency === 'daily') dueDate.setDate(lastDate.getDate() + 1);
-  else if (frequency === 'weekly') dueDate.setDate(lastDate.getDate() + 7);
-  else if (frequency === 'monthly') dueDate.setMonth(lastDate.getMonth() + 1);
-  else dueDate.setDate(lastDate.getDate() + 1); // Default to next day for on-demand initial? Or same day.
+  const dueDate = calculateNextDueDate(lastDate, frequency, frequency_interval);
 
   // 3. Create initial assignment (unassigned for now, or assigned to creator?)
   await sql`
@@ -141,7 +166,7 @@ export async function completeTask(assignmentId: string, data: {
 
   // 1. Get assignment and chore details
   const assignment = (await sql`
-    SELECT ca.*, c.frequency 
+    SELECT ca.*, c.frequency, c.frequency_interval
     FROM chore_assignments ca
     JOIN chores c ON ca.chore_id = c.id
     WHERE ca.id = ${assignmentId} AND ca.household_id = ${dbUser.active_household_id}
@@ -163,7 +188,7 @@ export async function completeTask(assignmentId: string, data: {
   `;
 
   // 3. Create next assignment if it's a repeated task
-  const { chore_id, frequency } = assignment;
+  const { chore_id, frequency, frequency_interval } = assignment;
   if (frequency && frequency !== 'on-demand') {
     // Use client-provided date if available, otherwise fallback to server local "day"
     // Note: Parsing YYYY-MM-DD string creates a Date at 00:00:00 UTC
@@ -171,11 +196,7 @@ export async function completeTask(assignmentId: string, data: {
       ? new Date(clientCompletionDate) 
       : new Date();
     
-    const nextDueDate = new Date(completionDate);
-
-    if (frequency === 'daily') nextDueDate.setDate(completionDate.getDate() + 1);
-    else if (frequency === 'weekly') nextDueDate.setDate(completionDate.getDate() + 7);
-    else if (frequency === 'monthly') nextDueDate.setMonth(completionDate.getMonth() + 1);
+    const nextDueDate = calculateNextDueDate(completionDate, frequency, frequency_interval);
 
     await sql`
       INSERT INTO chore_assignments (chore_id, household_id, due_date, status)

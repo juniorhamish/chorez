@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@auth0/nextjs-auth0/client";
 import { updateUserName, updateNotificationSchedule, inviteUser, respondToInvitation, switchHousehold } from "@/lib/actions/user-actions";
-import { addChore, addRoom, completeTask, assignTaskToSelf } from "@/lib/actions/chore-actions";
+import { addChore, addRoom, completeTask, assignTaskToSelf, type ChoreFrequency } from "@/lib/actions/chore-actions";
 import { 
   Plus, 
   CheckCircle2,
@@ -74,10 +74,13 @@ const MONTH_LABELS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-const FREQUENCY_OPTIONS: { value: 'daily' | 'weekly' | 'monthly' | 'on-demand'; label: string }[] = [
+const FREQUENCY_OPTIONS: { value: ChoreFrequency; label: string }[] = [
   { value: "daily", label: "Daily" },
   { value: "weekly", label: "Weekly" },
   { value: "monthly", label: "Monthly" },
+  { value: "yearly", label: "Yearly" },
+  { value: "every-x-days", label: "Every X Days" },
+  { value: "every-x-weeks", label: "Every X Weeks" },
   { value: "on-demand", label: "On Demand" },
 ];
 
@@ -275,7 +278,8 @@ export default function DashboardClient({
   const [newTaskRoomId, setNewTaskRoomId] = useState("");
   const [newTaskDuration, setNewTaskDuration] = useState("");
   const [newTaskLastCompleted, setNewTaskLastCompleted] = useState(() => new Date().toLocaleDateString('en-CA'));
-  const [newTaskFrequency, setNewTaskFrequency] = useState<'daily' | 'weekly' | 'monthly' | 'on-demand'>('weekly');
+  const [newTaskFrequency, setNewTaskFrequency] = useState<ChoreFrequency>('weekly');
+  const [newTaskFrequencyInterval, setNewTaskFrequencyInterval] = useState("1");
   const [isAddingTask, setIsAddingTask] = useState(false);
 
   // Add Room form state
@@ -490,14 +494,18 @@ export default function DashboardClient({
     setNewTaskDuration("");
     setNewTaskLastCompleted(new Date().toLocaleDateString('en-CA'));
     setNewTaskFrequency('weekly');
+    setNewTaskFrequencyInterval("1");
     setIsAddTaskOpen(true);
   };
+
+  const isCustomIntervalFrequency = newTaskFrequency === 'every-x-days' || newTaskFrequency === 'every-x-weeks';
 
   const isAddTaskValid =
     newTaskTitle.trim().length > 0 &&
     newTaskRoomId.length > 0 &&
     Number(newTaskDuration) > 0 &&
-    !!newTaskLastCompleted;
+    !!newTaskLastCompleted &&
+    (!isCustomIntervalFrequency || Number(newTaskFrequencyInterval) > 0);
 
   const handleAddTask = async () => {
     if (!isAddTaskValid) return;
@@ -509,6 +517,7 @@ export default function DashboardClient({
         estimated_duration_minutes: Number(newTaskDuration),
         last_completed_date: newTaskLastCompleted,
         frequency: newTaskFrequency,
+        frequency_interval: isCustomIntervalFrequency ? Number(newTaskFrequencyInterval) : undefined,
       });
       setIsAddTaskOpen(false);
       router.refresh();
@@ -1296,6 +1305,28 @@ export default function DashboardClient({
                     ))}
                   </select>
                 </div>
+
+                {/* Custom Interval */}
+                {isCustomIntervalFrequency && (
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
+                      Repeat Every
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min={1}
+                        placeholder="e.g. 3"
+                        value={newTaskFrequencyInterval}
+                        onChange={(e) => setNewTaskFrequencyInterval(e.target.value)}
+                        className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
+                      />
+                      <div className="absolute right-5 top-1/2 -translate-y-1/2 text-indigo-400 font-bold">
+                        {newTaskFrequency === 'every-x-weeks' ? 'weeks' : 'days'}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Last Completed */}
                 <div>
