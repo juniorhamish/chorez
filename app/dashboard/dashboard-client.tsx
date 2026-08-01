@@ -210,6 +210,10 @@ interface DashboardClientProps {
   initialInvitations?: Invitation[];
   initialFavoriteRoomIds?: string[];
   initialFavoriteChoreIds?: string[];
+  initialViewMode?: 'mine' | 'household';
+  initialWeekStart?: string;
+  initialSelectedDay?: string;
+  initialSelectedRoom?: string;
 }
 
 export default function DashboardClient({
@@ -221,6 +225,10 @@ export default function DashboardClient({
   initialInvitations,
   initialFavoriteRoomIds,
   initialFavoriteChoreIds,
+  initialViewMode,
+  initialWeekStart,
+  initialSelectedDay,
+  initialSelectedRoom,
 }: Readonly<DashboardClientProps>) {
   const { user } = useUser();
   const router = useRouter();
@@ -244,10 +252,26 @@ export default function DashboardClient({
     [households, initialDbUser]
   );
 
-  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getStartOfWeek(new Date()));
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
+    if (initialWeekStart) {
+      try {
+        const d = new Date(initialWeekStart);
+        if (!isNaN(d.getTime())) return getStartOfWeek(d);
+      } catch {}
+    }
+    return getStartOfWeek(new Date());
+  });
   const weekDays = useMemo(() => getWeekDays(currentWeekStart), [currentWeekStart]);
-  const [selectedDay, setSelectedDay] = useState<Date>(() => new Date());
-  const [selectedRoom, setSelectedRoom] = useState("all");
+  const [selectedDay, setSelectedDay] = useState<Date>(() => {
+    if (initialSelectedDay) {
+      try {
+        const d = new Date(initialSelectedDay);
+        if (!isNaN(d.getTime())) return d;
+      } catch {}
+    }
+    return new Date();
+  });
+  const [selectedRoom, setSelectedRoom] = useState(() => initialSelectedRoom || "all");
   const [favoriteRooms, setFavoriteRooms] = useState<string[]>(initialFavoriteRoomIds ?? []);
   const [favoriteTasks, setFavoriteTasks] = useState<string[]>(initialFavoriteChoreIds ?? []);
   const [completingTask, setCompletingTask] = useState<Task | null>(null);
@@ -261,7 +285,24 @@ export default function DashboardClient({
   const [morningNotificationHour, setMorningNotificationHour] = useState(initialDbUser?.morning_notification_hour ?? 8);
   const [eveningNotificationHour, setEveningNotificationHour] = useState(initialDbUser?.evening_notification_hour ?? 18);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [viewMode, setViewMode] = useState<'mine' | 'household'>('mine');
+  const [viewMode, setViewMode] = useState<'mine' | 'household'>(() => {
+    if (initialViewMode === 'mine' || initialViewMode === 'household') return initialViewMode;
+    return 'mine';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('chorez_view_mode', viewMode);
+      localStorage.setItem('chorez_week_start', currentWeekStart.toISOString());
+      localStorage.setItem('chorez_selected_day', selectedDay.toISOString());
+      localStorage.setItem('chorez_selected_room', selectedRoom);
+
+      document.cookie = `chorez_view_mode=${viewMode}; path=/; max-age=31536000`;
+      document.cookie = `chorez_week_start=${currentWeekStart.toISOString()}; path=/; max-age=31536000`;
+      document.cookie = `chorez_selected_day=${selectedDay.toISOString()}; path=/; max-age=31536000`;
+      document.cookie = `chorez_selected_room=${selectedRoom}; path=/; max-age=31536000`;
+    } catch {}
+  }, [viewMode, currentWeekStart, selectedDay, selectedRoom]);
 
   // Household switcher state
   const [isHouseholdMenuOpen, setIsHouseholdMenuOpen] = useState(false);
@@ -298,9 +339,23 @@ export default function DashboardClient({
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
 
+  function urlBase64ToUint8Array(base64String: string) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
+
   // Register Service Worker and check subscription
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsPushSupported(true);
       navigator.serviceWorker.register('/sw.js')
         .then(async (reg) => {
@@ -344,19 +399,6 @@ export default function DashboardClient({
     }
   }, [isPushSupported]);
 
-  function urlBase64ToUint8Array(base64String: string) {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding)
-      .replace(/-/g, '+')
-      .replace(/_/g, '/');
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-  }
-
   // Derived state
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
@@ -378,6 +420,11 @@ export default function DashboardClient({
       next.setDate(prev.getDate() - 7);
       return next;
     });
+    setSelectedDay(prev => {
+      const next = new Date(prev);
+      next.setDate(prev.getDate() - 7);
+      return next;
+    });
   };
 
   const goToNextWeek = () => {
@@ -386,10 +433,16 @@ export default function DashboardClient({
       next.setDate(prev.getDate() + 7);
       return next;
     });
+    setSelectedDay(prev => {
+      const next = new Date(prev);
+      next.setDate(prev.getDate() + 7);
+      return next;
+    });
   };
 
   const goToCurrentWeek = () => {
     setCurrentWeekStart(getStartOfWeek(new Date()));
+    setSelectedDay(new Date());
   };
 
   const weekRangeLabel = useMemo(() => {

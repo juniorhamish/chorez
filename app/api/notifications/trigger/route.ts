@@ -79,7 +79,7 @@ export async function POST(req: Request) {
       results.push({ userId: user.id, success: true });
     } catch (error) {
       console.error(`Failed to send push to user ${user.id}:`, error);
-      results.push({ userId: user.id, success: false, error: (error as any).message });
+      results.push({ userId: user.id, success: false, error: (error as Error).message });
     }
   }
 
