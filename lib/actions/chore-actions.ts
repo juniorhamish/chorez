@@ -3,6 +3,20 @@
 import { sql } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { getDbUser } from "./user-actions";
+import crypto from "crypto";
+
+/**
+ * Builds a Gravatar image URL for the given email address.
+ * Returns null when no email is available (e.g. unassigned tasks).
+ */
+function getGravatarUrl(email: string | null | undefined): string | null {
+  if (!email) return null;
+  const hash = crypto
+    .createHash("sha256")
+    .update(email.trim().toLowerCase())
+    .digest("hex");
+  return `https://www.gravatar.com/avatar/${hash}?d=identicon`;
+}
 
 export type ChoreFrequency =
   | 'daily'
@@ -45,7 +59,7 @@ export async function getHouseholdTasks() {
   if (!dbUser || !dbUser.active_household_id) return [];
 
   // Fetch chore assignments with chore and room details
-  return await sql`
+  const tasks = await sql`
     SELECT 
       ca.id,
       ca.chore_id,
@@ -64,6 +78,7 @@ export async function getHouseholdTasks() {
       r.id as room_id,
       u.full_name as assigned_user_name,
       u.avatar_label as assigned_user_avatar,
+      u.email as assigned_user_email,
       u.color_theme as assigned_user_color
     FROM chore_assignments ca
     JOIN chores c ON ca.chore_id = c.id
@@ -72,6 +87,11 @@ export async function getHouseholdTasks() {
     WHERE ca.household_id = ${dbUser.active_household_id}
     ORDER BY ca.due_date ASC
   `;
+
+  return tasks.map((task) => ({
+    ...task,
+    assigned_user_avatar_url: getGravatarUrl(task.assigned_user_email as string | null),
+  }));
 }
 
 export async function getFavoriteRoomIds() {

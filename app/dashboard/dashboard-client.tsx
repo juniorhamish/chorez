@@ -173,6 +173,7 @@ export interface Task {
   room_id: string | null;
   assigned_user_name: string | null;
   assigned_user_avatar: string | null;
+  assigned_user_avatar_url: string | null;
   assigned_user_color: string | null;
   completed_at: string | Date | null;
   actual_duration_minutes: number | null;
@@ -1178,8 +1179,16 @@ export default function DashboardClient({
                       </h3>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shadow-sm", avatarColor)}>
-                        {task.assigned_user_avatar ?? "?"}
+                      <div className={cn("w-10 h-10 rounded-2xl overflow-hidden flex items-center justify-center font-black text-sm shadow-sm", avatarColor)}>
+                        {task.assigned_user_avatar_url ? (
+                          <img
+                            src={task.assigned_user_avatar_url}
+                            alt={task.assigned_user_name ?? "Assigned user"}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          task.assigned_user_avatar ?? "?"
+                        )}
                       </div>
                       <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-tighter">
                         {isCompleted ? (
