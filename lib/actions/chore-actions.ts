@@ -58,6 +58,8 @@ export async function getHouseholdTasks() {
       ca.notes,
       c.title,
       c.estimated_duration_minutes,
+      c.frequency,
+      c.frequency_interval,
       r.name as room_name,
       r.id as room_id,
       u.full_name as assigned_user_name,
@@ -205,6 +207,60 @@ export async function deleteChore(choreId: string) {
     DELETE FROM chores
     WHERE id = ${choreId} AND household_id = ${dbUser.active_household_id}
   `;
+
+  revalidatePath("/dashboard");
+}
+
+export async function updateChoreFrequency(
+  choreId: string,
+  frequency: ChoreFrequency,
+  frequencyInterval?: number | null
+) {
+  const dbUser = await getDbUser();
+  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
+
+  const resolvedInterval =
+    frequency === 'every-x-days' || frequency === 'every-x-weeks' ? frequencyInterval ?? 1 : null;
+
+  // 1. Update the chore template's recurrence settings.
+  const updated = (await sql`
+    UPDATE chores
+    SET frequency = ${frequency}, frequency_interval = ${resolvedInterval}
+    WHERE id = ${choreId} AND household_id = ${dbUser.active_household_id}
+    RETURNING id
+  `)[0];
+
+  if (!updated) throw new Error("Chore not found");
+
+  // 2. Reevaluate the next due date based on the most recent completion date
+  // (falling back to today if it has never been completed) and the new frequency.
+  const lastCompletion = (await sql`
+    SELECT completed_at FROM chore_assignments
+    WHERE chore_id = ${choreId} AND status = 'completed' AND completed_at IS NOT NULL
+    ORDER BY completed_at DESC
+    LIMIT 1
+  `)[0];
+
+  const baseDate = lastCompletion ? new Date(lastCompletion.completed_at) : new Date();
+  const nextDueDate = calculateNextDueDate(baseDate, frequency, resolvedInterval);
+  const nextDueDateStr = nextDueDate.toISOString().split('T')[0];
+
+  // 3. Apply the recalculated due date to the pending instance(s) of this
+  // chore, or create one if none currently exists.
+  const updatedPending = await sql`
+    UPDATE chore_assignments
+    SET due_date = ${nextDueDateStr}
+    WHERE chore_id = ${choreId} AND household_id = ${dbUser.active_household_id} AND status = 'pending'
+    RETURNING id
+  `;
+
+  if (updatedPending.length === 0) {
+    await sql`
+      INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
+      VALUES (${choreId}, ${dbUser.active_household_id}, ${nextDueDateStr}, 'pending')
+      ON CONFLICT DO NOTHING
+    `;
+  }
 
   revalidatePath("/dashboard");
 }
