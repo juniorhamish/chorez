@@ -44,7 +44,7 @@ export interface HouseholdOptimizationPayload {
   }>;
 }
 
-const DEFAULT_MODEL = "gemini-3-flash-preview";
+const DEFAULT_MODEL = "gemini-3.6-flash";
 
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
