@@ -194,6 +194,21 @@ export async function addChore(data: {
   revalidatePath("/dashboard");
 }
 
+export async function deleteChore(choreId: string) {
+  const dbUser = await getDbUser();
+  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
+
+  // Deleting the chore template cascades (ON DELETE CASCADE) to remove every
+  // chore_assignments row that references it, i.e. all past/upcoming
+  // instances of this task.
+  await sql`
+    DELETE FROM chores
+    WHERE id = ${choreId} AND household_id = ${dbUser.active_household_id}
+  `;
+
+  revalidatePath("/dashboard");
+}
+
 export async function assignTaskToSelf(assignmentId: string) {
   const dbUser = await getDbUser();
   if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
