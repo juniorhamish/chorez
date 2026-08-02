@@ -441,8 +441,10 @@ export default function DashboardClient({
   // Derived state
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
-      const dueDate = task.due_date ? new Date(task.due_date) : null;
-      const dayMatch = !!dueDate && isSameDay(dueDate, selectedDay);
+      const taskDate = (task.status === 'completed' && task.completed_at)
+        ? new Date(task.completed_at)
+        : (task.due_date ? new Date(task.due_date) : null);
+      const dayMatch = !!taskDate && isSameDay(taskDate, selectedDay);
       const roomMatch = selectedRoom === "all" || task.room_id === selectedRoom;
       const assignmentMatch = viewMode === 'household' || task.assigned_user_id === initialDbUser?.id;
       return dayMatch && roomMatch && assignmentMatch;

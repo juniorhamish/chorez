@@ -241,9 +241,10 @@ export async function completeTask(assignmentId: string, data: {
 
   // 1. Get assignment and chore details
   const assignment = (await sql`
-    SELECT ca.*, c.frequency, c.frequency_interval
+    SELECT ca.*, c.frequency, c.frequency_interval, h.timezone as household_timezone
     FROM chore_assignments ca
     JOIN chores c ON ca.chore_id = c.id
+    JOIN households h ON ca.household_id = h.id
     WHERE ca.id = ${assignmentId} AND ca.household_id = ${dbUser.active_household_id}
   `)[0];
 
@@ -263,7 +264,7 @@ export async function completeTask(assignmentId: string, data: {
   `;
 
   // 3. If time taken was set, update the chore's estimated duration to the average of all actual durations so far
-  const { chore_id, frequency, frequency_interval } = assignment;
+  const { chore_id, frequency, frequency_interval, household_timezone } = assignment;
   if (hasSetTime) {
     await sql`
       UPDATE chores
@@ -280,12 +281,16 @@ export async function completeTask(assignmentId: string, data: {
 
   // 4. Create next assignment if it's a repeated task
   if (frequency && frequency !== 'on-demand') {
-    // Use client-provided date if available, otherwise fallback to server local "day"
-    // Note: Parsing YYYY-MM-DD string creates a Date at 00:00:00 UTC
-    const completionDate = clientCompletionDate 
-      ? new Date(clientCompletionDate) 
-      : new Date();
-    
+    const tz = household_timezone || "Europe/London";
+    const now = new Date();
+    const currentDateStr = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+
+    const completionDate = new Date(currentDateStr);
     const nextDueDate = calculateNextDueDate(completionDate, frequency, frequency_interval);
 
     await sql`
