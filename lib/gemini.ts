@@ -46,51 +46,71 @@ export interface HouseholdOptimizationPayload {
 
 const DEFAULT_MODEL = "gemini-3.6-flash";
 
-const RESPONSE_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    actions: {
-      type: "ARRAY",
-      description:
-        "Ordered list of actions to apply to the household's chore assignments for the upcoming week.",
-      items: {
-        type: "OBJECT",
-        properties: {
-          type: {
-            type: "STRING",
-            enum: ["assign", "reschedule"],
-            description:
-              "'assign' sets the assignee for a chore assignment. 'reschedule' moves its due date.",
+// Building the response schema per-request (rather than as a static constant)
+// lets us constrain "assignmentId" and "userId" to an enum of the actual ids
+// present in this household's payload, so Gemini's structured output can only
+// ever pick one of the real ids — it cannot invent, truncate or annotate one.
+function buildResponseSchema(payload: HouseholdOptimizationPayload) {
+  const userIds = payload.users.map((u) => u.id);
+  const assignmentIds = payload.upcomingTasks.map((t) => t.assignmentId);
+
+  return {
+    type: "OBJECT",
+    properties: {
+      actions: {
+        type: "ARRAY",
+        description:
+          "Ordered list of actions to apply to the household's chore assignments for the upcoming week.",
+        items: {
+          type: "OBJECT",
+          properties: {
+            type: {
+              type: "STRING",
+              enum: ["assign", "reschedule"],
+              description:
+                "'assign' sets the assignee for a chore assignment. 'reschedule' moves its due date.",
+            },
+            assignmentId: {
+              type: "STRING",
+              enum: assignmentIds,
+              description:
+                "The 'assignmentId' of one of the objects in upcomingTasks. Must be exactly one of the provided ids — nothing else.",
+            },
+            userId: {
+              type: "STRING",
+              enum: userIds,
+              nullable: true,
+              description:
+                "Required for 'assign' actions: the 'id' of one of the objects in users. Must be exactly one of the provided ids, or null to unassign — nothing else.",
+            },
+            newDueDate: {
+              type: "STRING",
+              nullable: true,
+              description: "Required for 'reschedule' actions: the new due date in YYYY-MM-DD format, within the given week.",
+            },
+            reason: {
+              type: "STRING",
+              nullable: true,
+              description: "One short sentence explaining why this action helps satisfy the optimisation rules.",
+            },
           },
-          assignmentId: {
-            type: "STRING",
-            description: "The id of the chore assignment this action applies to. Must be one of the ids provided in upcomingTasks.",
-          },
-          userId: {
-            type: "STRING",
-            nullable: true,
-            description: "Required for 'assign' actions: the id of the user to assign the task to. Must be one of the ids provided in users.",
-          },
-          newDueDate: {
-            type: "STRING",
-            nullable: true,
-            description: "Required for 'reschedule' actions: the new due date in YYYY-MM-DD format, within the given week.",
-          },
-          reason: {
-            type: "STRING",
-            nullable: true,
-            description: "One short sentence explaining why this action helps satisfy the optimisation rules.",
-          },
+          required: ["type", "assignmentId"],
         },
-        required: ["type", "assignmentId"],
       },
     },
-  },
-  required: ["actions"],
-};
+    required: ["actions"],
+  };
+}
 
 function buildPrompt(payload: HouseholdOptimizationPayload): string {
+  const userIdList = payload.users.map((u) => `"${u.id}" (${u.name})`).join(", ");
+  const assignmentIdList = payload.upcomingTasks.map((t) => `"${t.assignmentId}"`).join(", ");
+
   return `You are optimising the weekly household chore schedule for a single household in the "Chorez" app.
+
+Data structure (Household data JSON below):
+- "users" is the array of every user who belongs to this household. Each user has an opaque "id" (a UUID string) plus a "name", "favoriteRooms", "roomRatings" and "choreRatings" used only to decide preferences — never to identify a user.
+- "upcomingTasks" is the array of chore assignments in scope for this week. Each task has an opaque "assignmentId" (a UUID string) identifying the chore assignment row, plus "chore", "room", "dueDate", "estimatedDurationMinutes" and "currentlyAssignedUserId" (which, if set, is one of the ids in "users").
 
 Apply ALL of the following rules, in priority order:
 1. Assign tasks to users based on their previous ratings of similar tasks/rooms. Prefer giving a user tasks they have rated highly in the past (higher "averageRating" = they enjoyed/preferred it).
@@ -103,11 +123,20 @@ This data is ONLY for this one household (id: ${payload.household.id}) — do no
 Household data (JSON):
 ${JSON.stringify(payload, null, 2)}
 
+The only valid "userId" values for this household are: ${userIdList}.
+The only valid "assignmentId" values for this week are: ${assignmentIdList}.
+
 Return a JSON object with an "actions" array. Each action is either:
 - { "type": "assign", "assignmentId": "<id from upcomingTasks>", "userId": "<id from users>", "reason": "..." }
 - { "type": "reschedule", "assignmentId": "<id from upcomingTasks>", "newDueDate": "YYYY-MM-DD", "reason": "..." }
 
-Only reference assignmentId values from upcomingTasks and userId values from users. Do not invent ids. Only include actions that actually change something (skip assignments that are already optimal). It is fine to return an empty actions array if the schedule is already optimal.`;
+CRITICAL rules for "assignmentId" and "userId":
+- Copy the id EXACTLY as it appears in the data above: the same characters, in the same order, nothing added or removed.
+- Never append notes, names, commentary, punctuation or explanations to an id (e.g. do NOT write something like "<uuid> Tammy's ID?" — the value must be ONLY the raw uuid string, nothing else).
+- Never invent, guess, abbreviate or partially type an id. If you are not fully certain of an id, do not produce an action referencing it.
+- "userId" must be one of the ids listed under "users" (or null to unassign). "assignmentId" must be one of the ids listed under "upcomingTasks".
+
+Only include actions that actually change something (skip assignments that are already optimal). It is fine to return an empty actions array if the schedule is already optimal.`;
 }
 
 export async function getScheduleOptimizationActions(
@@ -128,7 +157,7 @@ export async function getScheduleOptimizationActions(
       contents: [{ role: "user", parts: [{ text: buildPrompt(payload) }] }],
       generationConfig: {
         responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
+        responseSchema: buildResponseSchema(payload),
         temperature: 0.2,
       },
     }),
