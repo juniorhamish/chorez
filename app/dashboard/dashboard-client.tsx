@@ -467,29 +467,19 @@ export default function DashboardClient({
   }, [filteredTasks]);
 
   const goToPreviousWeek = () => {
-    setCurrentWeekStart(prev => {
-      const next = new Date(prev);
-      next.setDate(prev.getDate() - 7);
-      return next;
-    });
-    setSelectedDay(prev => {
-      const next = new Date(prev);
-      next.setDate(prev.getDate() - 7);
-      return next;
-    });
+    const nextWeekStart = new Date(currentWeekStart);
+    nextWeekStart.setDate(currentWeekStart.getDate() - 7);
+    setCurrentWeekStart(nextWeekStart);
+    const lastDay = new Date(nextWeekStart);
+    lastDay.setDate(nextWeekStart.getDate() + 6);
+    setSelectedDay(lastDay);
   };
 
   const goToNextWeek = () => {
-    setCurrentWeekStart(prev => {
-      const next = new Date(prev);
-      next.setDate(prev.getDate() + 7);
-      return next;
-    });
-    setSelectedDay(prev => {
-      const next = new Date(prev);
-      next.setDate(prev.getDate() + 7);
-      return next;
-    });
+    const nextWeekStart = new Date(currentWeekStart);
+    nextWeekStart.setDate(currentWeekStart.getDate() + 7);
+    setCurrentWeekStart(nextWeekStart);
+    setSelectedDay(new Date(nextWeekStart));
   };
 
   const goToCurrentWeek = () => {
