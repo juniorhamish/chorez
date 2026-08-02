@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@auth0/nextjs-auth0/client";
 import { updateUserName, updateNotificationSchedule, inviteUser, respondToInvitation, switchHousehold } from "@/lib/actions/user-actions";
-import { addChore, addRoom, completeTask, assignTaskToSelf, deleteChore, toggleFavoriteRoom as toggleFavoriteRoomAction, toggleFavoriteChore as toggleFavoriteChoreAction, type ChoreFrequency } from "@/lib/actions/chore-actions";
+import { addChore, addRoom, completeTask, assignTaskToSelf, deleteChore, deleteTaskInstance, toggleFavoriteRoom as toggleFavoriteRoomAction, toggleFavoriteChore as toggleFavoriteChoreAction, type ChoreFrequency } from "@/lib/actions/chore-actions";
 import { 
   Plus, 
   CheckCircle2,
@@ -300,6 +300,7 @@ export default function DashboardClient({
   const [isAssigningTask, setIsAssigningTask] = useState<string | null>(null);
   const [deletingChore, setDeletingChore] = useState<Task | null>(null);
   const [isDeletingChore, setIsDeletingChore] = useState(false);
+  const [isDeletingInstance, setIsDeletingInstance] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [profileName, setProfileName] = useState(userName ?? "");
   const [morningNotificationHour, setMorningNotificationHour] = useState(initialDbUser?.morning_notification_hour ?? 8);
@@ -715,6 +716,20 @@ export default function DashboardClient({
       console.error("Failed to delete chore:", error);
     } finally {
       setIsDeletingChore(false);
+    }
+  };
+
+  const handleDeleteTaskInstance = async () => {
+    if (!deletingChore) return;
+    setIsDeletingInstance(true);
+    try {
+      await deleteTaskInstance(deletingChore.id);
+      setDeletingChore(null);
+      router.refresh();
+    } catch (error) {
+      console.error("Failed to delete task instance:", error);
+    } finally {
+      setIsDeletingInstance(false);
     }
   };
 
@@ -1346,7 +1361,7 @@ export default function DashboardClient({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => !isDeletingChore && setDeletingChore(null)}
+              onClick={() => !isDeletingChore && !isDeletingInstance && setDeletingChore(null)}
               className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-40"
             />
             
@@ -1366,24 +1381,46 @@ export default function DashboardClient({
                 </div>
                 <button 
                   onClick={() => setDeletingChore(null)}
-                  disabled={isDeletingChore}
+                  disabled={isDeletingChore || isDeletingInstance}
                   className="p-2 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
                 >
                   <X size={20} className="text-indigo-300" />
                 </button>
               </div>
 
-              <div className="space-y-6">
-                <div className="bg-rose-50 p-6 rounded-3xl border border-rose-100">
-                  <p className="text-rose-700 font-medium leading-relaxed">
-                    This will <span className="font-black underline">permanently remove</span> all scheduled and past occurrences of this recurring task. This action cannot be undone.
+              <div className="space-y-4">
+                <div className="bg-amber-50 p-6 rounded-3xl border border-amber-100">
+                  <p className="text-amber-800 font-bold mb-1">Just this occurrence</p>
+                  <p className="text-amber-700 font-medium leading-relaxed mb-4">
+                    This occurrence will be removed. {deletingChore.title} will continue as scheduled.
                   </p>
+                  <button 
+                    onClick={handleDeleteTaskInstance}
+                    disabled={isDeletingChore || isDeletingInstance}
+                    className="w-full bg-white border-2 border-amber-300 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed text-amber-700 py-4 rounded-4xl font-black text-base transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                  >
+                    {isDeletingInstance ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin" />
+                        Removing...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 size={18} />
+                        Delete Just This Occurrence
+                      </>
+                    )}
+                  </button>
                 </div>
 
-                <div className="flex flex-col gap-3">
+                <div className="bg-rose-50 p-6 rounded-3xl border border-rose-100">
+                  <p className="text-rose-700 font-bold mb-1">This and every occurrence</p>
+                  <p className="text-rose-700 font-medium leading-relaxed mb-4">
+                    This will <span className="font-black underline">permanently remove</span> all scheduled and past occurrences of this recurring task. This action cannot be undone.
+                  </p>
                   <button 
                     onClick={handleDeleteChore}
-                    disabled={isDeletingChore}
+                    disabled={isDeletingChore || isDeletingInstance}
                     className="w-full bg-rose-500 hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed text-white py-5 rounded-4xl font-black text-lg shadow-xl shadow-rose-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                   >
                     {isDeletingChore ? (
@@ -1394,18 +1431,19 @@ export default function DashboardClient({
                     ) : (
                       <>
                         <Trash2 size={20} />
-                        Delete Everything
+                        Delete This and Every Occurrence
                       </>
                     )}
                   </button>
-                  <button 
-                    onClick={() => setDeletingChore(null)}
-                    disabled={isDeletingChore}
-                    className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-600 py-4 rounded-4xl font-bold transition-all active:scale-[0.98]"
-                  >
-                    Cancel
-                  </button>
                 </div>
+
+                <button 
+                  onClick={() => setDeletingChore(null)}
+                  disabled={isDeletingChore || isDeletingInstance}
+                  className="w-full bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed text-indigo-600 py-4 rounded-4xl font-bold transition-all active:scale-[0.98]"
+                >
+                  Cancel
+                </button>
               </div>
             </motion.div>
           </>

@@ -209,6 +209,61 @@ export async function deleteChore(choreId: string) {
   revalidatePath("/dashboard");
 }
 
+export async function deleteTaskInstance(assignmentId: string) {
+  const dbUser = await getDbUser();
+  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
+
+  // 1. Look up the instance and its chore's recurrence settings before removing it.
+  const assignment = (await sql`
+    SELECT ca.id, ca.chore_id, c.frequency, c.frequency_interval
+    FROM chore_assignments ca
+    JOIN chores c ON ca.chore_id = c.id
+    WHERE ca.id = ${assignmentId} AND ca.household_id = ${dbUser.active_household_id}
+  `)[0];
+
+  if (!assignment) throw new Error("Assignment not found");
+
+  const { chore_id, frequency, frequency_interval } = assignment;
+
+  // 2. Remove just this single occurrence (not the chore template, and not
+  // its other past/upcoming instances).
+  await sql`
+    DELETE FROM chore_assignments
+    WHERE id = ${assignmentId} AND household_id = ${dbUser.active_household_id}
+  `;
+
+  // 3. If the task repeats and no other pending instance remains, reevaluate
+  // the next due date based on the most recent completion date (falling back
+  // to today if it has never been completed) and the chore's frequency.
+  if (frequency && frequency !== 'on-demand') {
+    const remainingPending = (await sql`
+      SELECT 1 FROM chore_assignments
+      WHERE chore_id = ${chore_id} AND status = 'pending'
+      LIMIT 1
+    `)[0];
+
+    if (!remainingPending) {
+      const lastCompletion = (await sql`
+        SELECT completed_at FROM chore_assignments
+        WHERE chore_id = ${chore_id} AND status = 'completed' AND completed_at IS NOT NULL
+        ORDER BY completed_at DESC
+        LIMIT 1
+      `)[0];
+
+      const baseDate = lastCompletion ? new Date(lastCompletion.completed_at) : new Date();
+      const nextDueDate = calculateNextDueDate(baseDate, frequency, frequency_interval);
+
+      await sql`
+        INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
+        VALUES (${chore_id}, ${dbUser.active_household_id}, ${nextDueDate.toISOString().split('T')[0]}, 'pending')
+        ON CONFLICT DO NOTHING
+      `;
+    }
+  }
+
+  revalidatePath("/dashboard");
+}
+
 export async function assignTaskToSelf(assignmentId: string) {
   const dbUser = await getDbUser();
   if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
