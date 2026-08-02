@@ -4,6 +4,20 @@ import { sql } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { getDbUser } from "./user-actions";
 import crypto from "crypto";
+import {
+  calculateNextDueDate,
+  isMoreFrequentThanWeekly,
+  ensureUpcomingInstances,
+} from "@/lib/scheduling";
+
+export type ChoreFrequency =
+  | 'daily'
+  | 'weekly'
+  | 'monthly'
+  | 'yearly'
+  | 'every-x-days'
+  | 'every-x-weeks'
+  | 'on-demand';
 
 /**
  * Builds a Gravatar image URL for the given email address.
@@ -16,33 +30,6 @@ function getGravatarUrl(email: string | null | undefined): string | null {
     .update(email.trim().toLowerCase())
     .digest("hex");
   return `https://www.gravatar.com/avatar/${hash}?d=identicon`;
-}
-
-export type ChoreFrequency =
-  | 'daily'
-  | 'weekly'
-  | 'monthly'
-  | 'yearly'
-  | 'every-x-days'
-  | 'every-x-weeks'
-  | 'on-demand';
-
-function calculateNextDueDate(
-  fromDate: Date,
-  frequency: ChoreFrequency,
-  frequencyInterval: number | null | undefined
-): Date {
-  const nextDate = new Date(fromDate);
-
-  if (frequency === 'daily') nextDate.setDate(fromDate.getDate() + 1);
-  else if (frequency === 'weekly') nextDate.setDate(fromDate.getDate() + 7);
-  else if (frequency === 'monthly') nextDate.setMonth(fromDate.getMonth() + 1);
-  else if (frequency === 'yearly') nextDate.setFullYear(fromDate.getFullYear() + 1);
-  else if (frequency === 'every-x-days') nextDate.setDate(fromDate.getDate() + (frequencyInterval || 1));
-  else if (frequency === 'every-x-weeks') nextDate.setDate(fromDate.getDate() + (frequencyInterval || 1) * 7);
-  else nextDate.setDate(fromDate.getDate() + 1); // Default to next day for on-demand initial? Or same day.
-
-  return nextDate;
 }
 
 export async function getRooms() {
@@ -203,15 +190,22 @@ export async function addChore(data: {
 
   const choreId = newChore[0].id;
 
-  // 2. Calculate next due date
+  // 2. Create the initial pending assignment(s) (unassigned for now, or
+  // assigned to creator?). Chores that recur more frequently than weekly
+  // (e.g. daily) get one instance per occurrence across the rolling
+  // schedule horizon, instead of a single "next" instance, so a different
+  // person can be assigned each time it comes up.
   const lastDate = new Date(last_completed_date);
-  const dueDate = calculateNextDueDate(lastDate, frequency, frequency_interval);
-
-  // 3. Create initial assignment (unassigned for now, or assigned to creator?)
-  await sql`
-    INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
-    VALUES (${choreId}, ${dbUser.active_household_id}, ${dueDate.toISOString().split('T')[0]}, 'pending')
-  `;
+  if (isMoreFrequentThanWeekly(frequency, frequency_interval)) {
+    await ensureUpcomingInstances(choreId, dbUser.active_household_id, frequency, frequency_interval, lastDate);
+  } else {
+    const dueDate = calculateNextDueDate(lastDate, frequency, frequency_interval);
+    await sql`
+      INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
+      VALUES (${choreId}, ${dbUser.active_household_id}, ${dueDate.toISOString().split('T')[0]}, 'pending')
+      ON CONFLICT (chore_id, due_date) DO NOTHING
+    `;
+  }
 
   revalidatePath("/dashboard");
 }
@@ -262,23 +256,27 @@ export async function updateChoreFrequency(
   `)[0];
 
   const baseDate = lastCompletion ? new Date(lastCompletion.completed_at) : new Date();
-  const nextDueDate = calculateNextDueDate(baseDate, frequency, resolvedInterval);
-  const nextDueDateStr = nextDueDate.toISOString().split('T')[0];
 
-  // 3. Apply the recalculated due date to the pending instance(s) of this
-  // chore, or create one if none currently exists.
-  const updatedPending = await sql`
-    UPDATE chore_assignments
-    SET due_date = ${nextDueDateStr}
-    WHERE chore_id = ${choreId} AND household_id = ${dbUser.active_household_id} AND status = 'pending'
-    RETURNING id
+  // 3. Clear out today's/future pending instances so the schedule can be
+  // regenerated to match the new recurrence settings, then repopulate it:
+  // a full rolling schedule of instances for chores that recur more
+  // frequently than weekly (e.g. daily), or a single "next" instance
+  // otherwise.
+  await sql`
+    DELETE FROM chore_assignments
+    WHERE chore_id = ${choreId} AND household_id = ${dbUser.active_household_id}
+      AND status = 'pending' AND due_date >= CURRENT_DATE
   `;
 
-  if (updatedPending.length === 0) {
+  if (isMoreFrequentThanWeekly(frequency, resolvedInterval)) {
+    await ensureUpcomingInstances(choreId, dbUser.active_household_id, frequency, resolvedInterval, baseDate);
+  } else {
+    const nextDueDate = calculateNextDueDate(baseDate, frequency, resolvedInterval);
+    const nextDueDateStr = nextDueDate.toISOString().split('T')[0];
     await sql`
       INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
       VALUES (${choreId}, ${dbUser.active_household_id}, ${nextDueDateStr}, 'pending')
-      ON CONFLICT DO NOTHING
+      ON CONFLICT (chore_id, due_date) DO NOTHING
     `;
   }
 
@@ -327,13 +325,17 @@ export async function deleteTaskInstance(assignmentId: string) {
       `)[0];
 
       const baseDate = lastCompletion ? new Date(lastCompletion.completed_at) : new Date();
-      const nextDueDate = calculateNextDueDate(baseDate, frequency, frequency_interval);
 
-      await sql`
-        INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
-        VALUES (${chore_id}, ${dbUser.active_household_id}, ${nextDueDate.toISOString().split('T')[0]}, 'pending')
-        ON CONFLICT DO NOTHING
-      `;
+      if (isMoreFrequentThanWeekly(frequency, frequency_interval)) {
+        await ensureUpcomingInstances(chore_id, dbUser.active_household_id, frequency, frequency_interval, baseDate);
+      } else {
+        const nextDueDate = calculateNextDueDate(baseDate, frequency, frequency_interval);
+        await sql`
+          INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
+          VALUES (${chore_id}, ${dbUser.active_household_id}, ${nextDueDate.toISOString().split('T')[0]}, 'pending')
+          ON CONFLICT (chore_id, due_date) DO NOTHING
+        `;
+      }
     }
   }
 
@@ -425,7 +427,11 @@ export async function completeTask(assignmentId: string, data: {
     `;
   }
 
-  // 4. Create next assignment if it's a repeated task
+  // 4. Create the next assignment(s) if it's a repeated task. Chores that
+  // recur more frequently than weekly (e.g. daily) get the rolling schedule
+  // horizon topped up with one instance per occurrence, instead of just the
+  // single next one, so a different person can be assigned each time it
+  // comes up.
   if (frequency && frequency !== 'on-demand') {
     const tz = household_timezone || "Europe/London";
     const now = new Date();
@@ -437,13 +443,17 @@ export async function completeTask(assignmentId: string, data: {
     }).format(now);
 
     const completionDate = new Date(currentDateStr);
-    const nextDueDate = calculateNextDueDate(completionDate, frequency, frequency_interval);
 
-    await sql`
-      INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
-      VALUES (${chore_id}, ${dbUser.active_household_id}, ${nextDueDate.toISOString().split('T')[0]}, 'pending')
-      ON CONFLICT DO NOTHING
-    `;
+    if (isMoreFrequentThanWeekly(frequency, frequency_interval)) {
+      await ensureUpcomingInstances(chore_id, dbUser.active_household_id, frequency, frequency_interval, completionDate);
+    } else {
+      const nextDueDate = calculateNextDueDate(completionDate, frequency, frequency_interval);
+      await sql`
+        INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
+        VALUES (${chore_id}, ${dbUser.active_household_id}, ${nextDueDate.toISOString().split('T')[0]}, 'pending')
+        ON CONFLICT (chore_id, due_date) DO NOTHING
+      `;
+    }
   }
 
   revalidatePath("/dashboard");

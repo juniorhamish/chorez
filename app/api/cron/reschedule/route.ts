@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import { ensureUpcomingInstancesForHousehold } from "@/lib/scheduling";
 import { NextResponse } from "next/server";
 
 async function handleReschedule(req: Request) {
@@ -15,6 +16,7 @@ async function handleReschedule(req: Request) {
     const households = await sql`SELECT id, timezone FROM households`;
     
     let totalRescheduled = 0;
+    let totalCreated = 0;
     const allRescheduledTasks = [];
 
     for (const household of households) {
@@ -47,12 +49,21 @@ async function handleReschedule(req: Request) {
 
       totalRescheduled += updatedAssignments.length;
       allRescheduledTasks.push(...updatedAssignments);
+
+      // Top up the rolling schedule: chores that recur more frequently than
+      // weekly (e.g. daily) should always have a pending instance for every
+      // occurrence between today and the end of the schedule horizon, so
+      // the optimiser can assign a different person to each day. Without
+      // this, a household that isn't actively completing tasks would never
+      // get new days added to its schedule.
+      totalCreated += await ensureUpcomingInstancesForHousehold(household.id);
     }
 
     return NextResponse.json({
       success: true,
       rescheduledCount: totalRescheduled,
-      rescheduledTasks: allRescheduledTasks
+      rescheduledTasks: allRescheduledTasks,
+      createdInstancesCount: totalCreated
     });
   } catch (error) {
     console.error("Failed to reschedule incomplete tasks:", error);
