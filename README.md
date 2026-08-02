@@ -63,3 +63,57 @@ APP_BASE_URL=http://localhost:3000
 ### 3. Run it
 
 Start the dev server (`npm run dev`) and click **Log In** — you'll be redirected to Auth0's Universal Login page, then back to the app once authenticated. The button automatically switches to **Log Out** when a session is active.
+
+## AI-Optimised Weekly Schedule (Google Gemini)
+
+`GET`/`POST /api/cron/optimize-schedule` uses the Google Gemini API to rebalance the **upcoming week's** pending chore assignments for every household. It's meant to be triggered by a cron job **once per week**.
+
+For each household, it packages up:
+
+- The household's members.
+- Each member's favourite rooms.
+- Each member's historical average effort/satisfaction rating, broken down by room and by chore (from completed tasks).
+- The pending chore assignments due in the next 7 days.
+
+...and sends this as a **separate Gemini request per household** (so context, instructions, and results never mix across households), asking it to return a list of actions following these rules:
+
+1. Prefer assigning a user tasks they've rated highly in the past.
+2. Prefer assigning a user tasks in their favourite rooms.
+3. Keep assignments fair — no one should be stuck with only unrated/low-rated tasks.
+4. Rebalance due dates within the week to avoid overloaded or empty days.
+
+Gemini can only respond with two action types, and any action referencing an unknown assignment or user is skipped rather than applied:
+
+- `assign` — set the assignee on a specific chore assignment.
+- `reschedule` — move a chore assignment's due date (must stay within the optimised week).
+
+### Configuration
+
+```env
+GEMINI_API_KEY=<from https://aistudio.google.com/apikey>
+# GEMINI_MODEL=gemini-2.0-flash   # optional override
+# CRON_SECRET=<shared secret>      # optional, required by all /api/cron/* routes when set
+```
+
+### Query params
+
+- `?dryRun=true` — compute and return the proposed actions without writing to the database (useful for testing).
+- `?householdId=<uuid>` — only optimise a single household.
+
+### Response shape
+
+For each household, the response includes an `appliedActions` array describing exactly what was changed (or, with `?dryRun=true`, what *would* be changed):
+
+```json
+{
+  "type": "reschedule",
+  "assignmentId": "d20cea3b-c71a-4d57-aa53-37c9ac1a4d9e",
+  "chore": "Hoover rug",
+  "room": "Hall",
+  "previousDueDate": "2026-08-02",
+  "newDueDate": "2026-08-03",
+  "reason": "Moving this task to Monday helps balance the heavy workload on Sunday across the week."
+}
+```
+
+`assign` actions include `previousUserId`/`newUserId` instead of due dates. Actions Gemini proposed but that referenced an unknown/invalid id, user, or date are reported separately under `skippedActions` (with a `reason`) and are never applied.
