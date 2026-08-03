@@ -1162,14 +1162,16 @@ export default function DashboardClient({
                         )}
                         <button 
                           onClick={() => openEditFrequency(task)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 -m-1 text-indigo-200 hover:text-indigo-500 active:scale-125"
+                          aria-label="Edit frequency"
+                          className="opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity p-1 -m-1 text-indigo-300 md:text-indigo-200 hover:text-indigo-500 active:scale-125"
                           title="Edit frequency"
                         >
                           <Repeat size={16} />
                         </button>
                         <button 
                           onClick={() => setDeletingChore(task)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 -m-1 text-indigo-200 hover:text-rose-400 active:scale-125"
+                          aria-label="Delete chore template"
+                          className="opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity p-1 -m-1 text-indigo-300 md:text-indigo-200 hover:text-rose-400 active:scale-125"
                           title="Delete chore template"
                         >
                           <Trash2 size={16} />
