@@ -283,6 +283,30 @@ export async function updateChoreFrequency(
   revalidatePath("/dashboard");
 }
 
+export async function updateChoreRoom(choreId: string, roomId: string) {
+  const dbUser = await getDbUser();
+  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
+
+  // Ensure the target room belongs to the same household before reassigning.
+  const room = (await sql`
+    SELECT id FROM rooms
+    WHERE id = ${roomId} AND household_id = ${dbUser.active_household_id}
+  `)[0];
+
+  if (!room) throw new Error("Room not found");
+
+  const updated = (await sql`
+    UPDATE chores
+    SET room_id = ${roomId}
+    WHERE id = ${choreId} AND household_id = ${dbUser.active_household_id}
+    RETURNING id
+  `)[0];
+
+  if (!updated) throw new Error("Chore not found");
+
+  revalidatePath("/dashboard");
+}
+
 export async function deleteTaskInstance(assignmentId: string) {
   const dbUser = await getDbUser();
   if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");

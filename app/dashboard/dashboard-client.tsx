@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@auth0/nextjs-auth0/client";
 import { updateUserName, updateNotificationSchedule, inviteUser, respondToInvitation, switchHousehold } from "@/lib/actions/user-actions";
-import { addChore, addRoom, completeTask, assignTaskToSelf, deleteChore, deleteTaskInstance, updateChoreFrequency, toggleFavoriteRoom as toggleFavoriteRoomAction, toggleFavoriteChore as toggleFavoriteChoreAction, type ChoreFrequency } from "@/lib/actions/chore-actions";
+import { addChore, addRoom, completeTask, assignTaskToSelf, deleteChore, deleteTaskInstance, updateChoreFrequency, updateChoreRoom, toggleFavoriteRoom as toggleFavoriteRoomAction, toggleFavoriteChore as toggleFavoriteChoreAction, type ChoreFrequency } from "@/lib/actions/chore-actions";
 import { 
   Plus, 
   CheckCircle2,
@@ -42,6 +42,7 @@ import {
   Repeat,
   Timer,
   Square,
+  DoorOpen,
   type LucideIcon
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -333,6 +334,9 @@ export default function DashboardClient({
   const [editFrequencyValue, setEditFrequencyValue] = useState<ChoreFrequency>('weekly');
   const [editFrequencyInterval, setEditFrequencyInterval] = useState("1");
   const [isUpdatingFrequency, setIsUpdatingFrequency] = useState(false);
+  const [editingRoomTask, setEditingRoomTask] = useState<Task | null>(null);
+  const [editRoomValue, setEditRoomValue] = useState("");
+  const [isUpdatingRoom, setIsUpdatingRoom] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [profileName, setProfileName] = useState(userName ?? "");
   const [morningNotificationHour, setMorningNotificationHour] = useState(initialDbUser?.morning_notification_hour ?? 8);
@@ -873,6 +877,25 @@ export default function DashboardClient({
     }
   };
 
+  const openEditRoom = (task: Task) => {
+    setEditingRoomTask(task);
+    setEditRoomValue(task.room_id ?? "");
+  };
+
+  const handleUpdateRoom = async () => {
+    if (!editingRoomTask || !editRoomValue) return;
+    setIsUpdatingRoom(true);
+    try {
+      await updateChoreRoom(editingRoomTask.chore_id, editRoomValue);
+      setEditingRoomTask(null);
+      router.refresh();
+    } catch (error) {
+      console.error("Failed to update chore room:", error);
+    } finally {
+      setIsUpdatingRoom(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#FDFCF0] text-[#2D336B] pb-20 font-sans selection:bg-indigo-100">
       {/* 0. PENDING INVITATIONS BANNER */}
@@ -1276,6 +1299,14 @@ export default function DashboardClient({
                           title="Edit frequency"
                         >
                           <Repeat size={16} />
+                        </button>
+                        <button 
+                          onClick={() => openEditRoom(task)}
+                          aria-label="Change room"
+                          className="opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity p-1 -m-1 text-indigo-300 md:text-indigo-200 hover:text-indigo-500 active:scale-125"
+                          title="Change room"
+                        >
+                          <DoorOpen size={16} />
                         </button>
                         <button 
                           onClick={() => setDeletingChore(task)}
@@ -1739,6 +1770,85 @@ export default function DashboardClient({
                     </>
                   ) : (
                     "Update Frequency"
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* EDIT ROOM MODAL */}
+      <AnimatePresence>
+        {editingRoomTask && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !isUpdatingRoom && setEditingRoomTask(null)}
+              className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-40"
+            />
+
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[3rem] p-8 z-50 shadow-2xl max-w-lg mx-auto border-t border-indigo-50 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="w-12 h-1.5 bg-indigo-100 rounded-full mx-auto mb-8" />
+
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-2xl font-black mb-1">Change Room</h2>
+                  <p className="text-indigo-400 font-bold">{editingRoomTask.title}</p>
+                </div>
+                <button
+                  onClick={() => setEditingRoomTask(null)}
+                  disabled={isUpdatingRoom}
+                  className="p-2 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
+                >
+                  <X size={20} className="text-indigo-300" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {/* Room */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
+                    Room
+                  </label>
+                  <select
+                    value={editRoomValue}
+                    onChange={(e) => setEditRoomValue(e.target.value)}
+                    className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all appearance-none"
+                  >
+                    {selectableRooms.map((room) => (
+                      <option key={room.id} value={room.id}>
+                        {room.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <p className="text-indigo-400 font-medium text-sm leading-relaxed px-1">
+                  Moving this task will update the room for every past and upcoming occurrence of it.
+                </p>
+
+                {/* Submit */}
+                <button
+                  onClick={handleUpdateRoom}
+                  disabled={isUpdatingRoom || !editRoomValue}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-5 rounded-4xl font-black text-lg shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] mt-4 flex items-center justify-center gap-2"
+                >
+                  {isUpdatingRoom ? (
+                    <>
+                      <Loader2 size={20} className="animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Update Room"
                   )}
                 </button>
               </div>
