@@ -1,244 +1,52 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@auth0/nextjs-auth0/client";
 import { updateUserName, updateNotificationSchedule, inviteUser, respondToInvitation, switchHousehold } from "@/lib/actions/user-actions";
-import { addChore, addRoom, completeTask, assignTaskToSelf, deleteChore, deleteTaskInstance, updateChoreFrequency, updateChoreRoom, toggleFavoriteRoom as toggleFavoriteRoomAction, toggleFavoriteChore as toggleFavoriteChoreAction, type ChoreFrequency } from "@/lib/actions/chore-actions";
-import { 
-  Plus, 
-  CheckCircle2,
-  Star, 
-  Clock, 
-  User as UserIcon, 
-  X,
-  Bath,
-  Armchair,
-  Home,
-  UtensilsCrossed,
-  Sparkles,
-  Bed,
-  Tv,
-  Briefcase,
-  Dumbbell,
-  Shirt,
-  Baby,
-  Car,
-  Flower2,
-  Search,
-  MessageSquare,
-  LogOut,
-  Settings,
-  Trash2,
-  Loader2,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
-  Check,
-  Mail,
-  Bell,
-  BellOff,
-  RefreshCw,
-  Repeat,
-  Timer,
-  Square,
-  DoorOpen,
-  type LucideIcon
-} from "lucide-react";
+import { addChore, addRoom, completeTask, assignTaskToSelf, deleteChore, deleteTaskInstance, updateChoreFrequency, updateChoreRoom, toggleFavoriteRoom as toggleFavoriteRoomAction, toggleFavoriteChore as toggleFavoriteChoreAction } from "@/lib/actions/chore-actions";
+import { Mail, Loader2, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import {
+  MONTH_LABELS,
+  getStartOfWeek,
+  getWeekDays,
+  isSameDay,
+} from "@/lib/dashboard/date-utils";
+import type {
+  DbUser,
+  Household,
+  HouseholdUser,
+  Invitation,
+  Room,
+  Task,
+} from "@/lib/dashboard/types";
+import { useStopwatch } from "@/lib/dashboard/hooks/useStopwatch";
+import { useViewPreferences } from "@/lib/dashboard/hooks/useViewPreferences";
+import { useTaskModals } from "@/lib/dashboard/hooks/useTaskModals";
+import { useHouseholdSwitcher } from "@/lib/dashboard/hooks/useHouseholdSwitcher";
+import { useInviteMember } from "@/lib/dashboard/hooks/useInviteMember";
+import { useAddTaskForm } from "@/lib/dashboard/hooks/useAddTaskForm";
+import { useAddRoomForm } from "@/lib/dashboard/hooks/useAddRoomForm";
+import { usePushNotifications } from "@/lib/dashboard/hooks/usePushNotifications";
+import { getGreeting, ICON_OPTIONS } from "@/app/dashboard/components/dashboard-ui-utils";
+import DashboardHeader from "@/app/dashboard/components/DashboardHeader";
+import WeekStrip from "@/app/dashboard/components/WeekStrip";
+import RoomFilterBar from "@/app/dashboard/components/RoomFilterBar";
+import TaskList from "@/app/dashboard/components/TaskList";
+import CompleteTaskModal from "@/app/dashboard/components/modals/CompleteTaskModal";
+import DeleteChoreConfirmDialog from "@/app/dashboard/components/modals/DeleteChoreConfirmDialog";
+import EditFrequencyModal from "@/app/dashboard/components/modals/EditFrequencyModal";
+import EditRoomModal from "@/app/dashboard/components/modals/EditRoomModal";
+import AddTaskModal from "@/app/dashboard/components/modals/AddTaskModal";
+import AddRoomModal from "@/app/dashboard/components/modals/AddRoomModal";
+import ProfileModal from "@/app/dashboard/components/modals/ProfileModal";
+import InviteMemberModal from "@/app/dashboard/components/modals/InviteMemberModal";
 
-/** 
- * UTILS 
- */
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
-
-function getGreeting() {
-  const hour = new Date().getHours();
-  if (hour >= 5 && hour < 12) return "Good morning";
-  if (hour >= 12 && hour < 18) return "Good afternoon";
-  return "Good evening";
-}
-
-/**
- * Maps a room's `icon_name` (stored in the DB) to a Lucide icon component.
- * Falls back to `Home` when the name is missing or unrecognized.
- */
-const ICON_MAP: Record<string, LucideIcon> = {
-  Home,
-  UtensilsCrossed,
-  Bath,
-  Armchair,
-  Bed,
-  Tv,
-  Briefcase,
-  Dumbbell,
-  Shirt,
-  Baby,
-  Car,
-  Flower2,
-  Sparkles,
-};
-
-function getRoomIcon(iconName?: string | null): LucideIcon {
-  if (!iconName) return Home;
-  return ICON_MAP[iconName] ?? Home;
-}
-
-const ICON_OPTIONS = Object.keys(ICON_MAP);
-
-const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const MONTH_LABELS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
-const FREQUENCY_OPTIONS: { value: ChoreFrequency; label: string }[] = [
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-  { value: "monthly", label: "Monthly" },
-  { value: "yearly", label: "Yearly" },
-  { value: "every-x-days", label: "Every X Days" },
-  { value: "every-x-weeks", label: "Every X Weeks" },
-  { value: "on-demand", label: "On Demand" },
-];
-
-const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => hour);
-
-/** localStorage key used to persist the running stopwatch across reloads (e.g. after the device locks). */
-const STOPWATCH_STORAGE_KEY = "chorez_stopwatch";
-/** Caps how long a single stopwatch run can count, so a forgotten timer never pre-fills a huge duration. */
-const MAX_STOPWATCH_MINUTES = 180;
-
-/** Formats a millisecond duration as `mm:ss`, or `h:mm:ss` once it runs past an hour. */
-function formatStopwatchTime(ms: number) {
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
-}
-
-/** Formats a 24-hour value (0-23) as a friendly 12-hour clock label, e.g. 8 -> "8:00 AM". */
-function formatHourLabel(hour: number) {
-  const period = hour < 12 ? "AM" : "PM";
-  const displayHour = hour % 12 === 0 ? 12 : hour % 12;
-  return `${displayHour}:00 ${period}`;
-}
+export type { DbUser, Household, HouseholdUser, Invitation, Room, Task } from "@/lib/dashboard/types";
 
 /**
- * Returns the Monday of the week containing the given date (native Date only,
- * since date-fns is not installed in this project).
- */
-function getStartOfWeek(date: Date) {
-  const result = new Date(date);
-  const day = result.getDay(); // 0 (Sun) - 6 (Sat)
-  const diff = day === 0 ? -6 : 1 - day;
-  result.setDate(result.getDate() + diff);
-  result.setHours(0, 0, 0, 0);
-  return result;
-}
-
-function isSameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
-function formatDayDate(date: Date) {
-  return `${MONTH_LABELS[date.getMonth()]} ${String(date.getDate()).padStart(2, "0")}`;
-}
-
-function getDayLabel(date: Date) {
-  return DAY_LABELS[(date.getDay() + 6) % 7];
-}
-
-/** Builds the 7 days (Mon-Sun) for the week starting at `weekStart`. */
-function getWeekDays(weekStart: Date) {
-  const today = new Date();
-  return Array.from({ length: 7 }, (_, i) => {
-    const date = new Date(weekStart);
-    date.setDate(weekStart.getDate() + i);
-    return {
-      label: DAY_LABELS[i],
-      date: formatDayDate(date),
-      fullDate: date,
-      isToday: isSameDay(date, today),
-    };
-  });
-}
-
-/** 
- * TYPES 
- */
-export interface Task {
-  id: string;
-  chore_id: string;
-  assigned_user_id: string | null;
-  due_date: string | Date;
-  status: string;
-  title: string;
-  estimated_duration_minutes: number | null;
-  frequency: ChoreFrequency;
-  frequency_interval: number | null;
-  room_name: string | null;
-  room_id: string | null;
-  assigned_user_name: string | null;
-  assigned_user_avatar: string | null;
-  assigned_user_avatar_url: string | null;
-  assigned_user_color: string | null;
-  completed_at: string | Date | null;
-  actual_duration_minutes: number | null;
-  effort_rating: number | null;
-  notes: string | null;
-}
-
-export interface Room {
-  id: string;
-  household_id?: string;
-  name: string;
-  icon_name?: string | null;
-  created_at?: string;
-}
-
-export interface HouseholdUser {
-  id: string;
-  name: string | null;
-  avatar: string | null;
-  color: string | null;
-}
-
-export interface DbUser {
-  id?: string;
-  full_name?: string | null;
-  email?: string;
-  active_household_id?: string | null;
-  morning_notification_hour?: number | null;
-  evening_notification_hour?: number | null;
-}
-
-export interface Invitation {
-  id: string;
-  household_id: string;
-  household_name: string;
-  inviter_name: string;
-  status: 'pending' | 'accepted' | 'declined';
-}
-
-export interface Household {
-  id: string;
-  name: string;
-  role: 'admin' | 'member';
-}
-
-/** 
- * COMPONENTS 
+ * COMPONENTS
  */
 
 interface DashboardClientProps {
@@ -287,225 +95,139 @@ export default function DashboardClient({
     () => (initialInvitations ?? []).filter((inv) => inv.status === "pending"),
     [initialInvitations]
   );
+  const activeHouseholdId = initialDbUser?.active_household_id;
   const activeHousehold = useMemo(
-    () => households.find((h) => h.id === initialDbUser?.active_household_id) ?? null,
-    [households, initialDbUser]
+    () => households.find((h) => h.id === activeHouseholdId) ?? null,
+    [households, activeHouseholdId]
   );
 
-  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => {
-    if (initialWeekStart) {
-      try {
-        const d = new Date(initialWeekStart);
-        if (!isNaN(d.getTime())) return getStartOfWeek(d);
-      } catch {}
-    }
-    return getStartOfWeek(new Date());
-  });
+  const {
+    viewMode,
+    setViewMode,
+    currentWeekStart,
+    setCurrentWeekStart,
+    selectedDay,
+    setSelectedDay,
+    selectedRoom,
+    setSelectedRoom,
+  } = useViewPreferences({ initialViewMode, initialWeekStart, initialSelectedDay, initialSelectedRoom });
   const weekDays = useMemo(() => getWeekDays(currentWeekStart), [currentWeekStart]);
-  const [selectedDay, setSelectedDay] = useState<Date>(() => {
-    if (initialSelectedDay) {
-      try {
-        const d = new Date(initialSelectedDay);
-        if (!isNaN(d.getTime())) return d;
-      } catch {}
-    }
-    return new Date();
-  });
-  const [selectedRoom, setSelectedRoom] = useState(() => initialSelectedRoom || "all");
   const [favoriteRooms, setFavoriteRooms] = useState<string[]>(initialFavoriteRoomIds ?? []);
   const [favoriteTasks, setFavoriteTasks] = useState<string[]>(initialFavoriteChoreIds ?? []);
-  const [completingTask, setCompletingTask] = useState<Task | null>(null);
-  const [rating, setRating] = useState(0);
-  const [actualMinutes, setActualMinutes] = useState("");
-  const [completionNotes, setCompletionNotes] = useState("");
-  const [isCompletingTask, setIsCompletingTask] = useState(false);
-  const [wasStopwatchCapped, setWasStopwatchCapped] = useState(false);
 
-  // Stopwatch: persisted as a wall-clock start time (not a running counter) so
-  // the elapsed time stays correct even if the device is locked or the app
-  // is fully reloaded while timing a task.
-  const [stopwatch, setStopwatch] = useState<{ taskId: string; startedAt: number } | null>(null);
-  const [stopwatchNow, setStopwatchNow] = useState(() => Date.now());
-  const [isAssigningTask, setIsAssigningTask] = useState<string | null>(null);
-  const [deletingChore, setDeletingChore] = useState<Task | null>(null);
-  const [isDeletingChore, setIsDeletingChore] = useState(false);
-  const [isDeletingInstance, setIsDeletingInstance] = useState(false);
-  const [editingFrequencyTask, setEditingFrequencyTask] = useState<Task | null>(null);
-  const [editFrequencyValue, setEditFrequencyValue] = useState<ChoreFrequency>('weekly');
-  const [editFrequencyInterval, setEditFrequencyInterval] = useState("1");
-  const [isUpdatingFrequency, setIsUpdatingFrequency] = useState(false);
-  const [editingRoomTask, setEditingRoomTask] = useState<Task | null>(null);
-  const [editRoomValue, setEditRoomValue] = useState("");
-  const [isUpdatingRoom, setIsUpdatingRoom] = useState(false);
+  const {
+    completingTask,
+    setCompletingTask,
+    rating,
+    setRating,
+    actualMinutes,
+    setActualMinutes,
+    completionNotes,
+    setCompletionNotes,
+    isCompletingTask,
+    setIsCompletingTask,
+    isAssigningTask,
+    setIsAssigningTask,
+    deletingChore,
+    setDeletingChore,
+    isDeletingChore,
+    setIsDeletingChore,
+    isDeletingInstance,
+    setIsDeletingInstance,
+    editingFrequencyTask,
+    setEditingFrequencyTask,
+    editFrequencyValue,
+    setEditFrequencyValue,
+    editFrequencyInterval,
+    setEditFrequencyInterval,
+    isUpdatingFrequency,
+    setIsUpdatingFrequency,
+    openEditFrequency,
+    editingRoomTask,
+    setEditingRoomTask,
+    editRoomValue,
+    setEditRoomValue,
+    isUpdatingRoom,
+    setIsUpdatingRoom,
+    openEditRoom,
+  } = useTaskModals();
+
+  const {
+    stopwatch,
+    stopwatchDisplayMs,
+    isStopwatchCapped,
+    wasStopwatchCapped,
+    setWasStopwatchCapped,
+    startStopwatch,
+    stopStopwatch,
+  } = useStopwatch();
+
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [profileName, setProfileName] = useState(userName ?? "");
   const [morningNotificationHour, setMorningNotificationHour] = useState(initialDbUser?.morning_notification_hour ?? 8);
   const [eveningNotificationHour, setEveningNotificationHour] = useState(initialDbUser?.evening_notification_hour ?? 18);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [viewMode, setViewMode] = useState<'mine' | 'household'>(() => {
-    if (initialViewMode === 'mine' || initialViewMode === 'household') return initialViewMode;
-    return 'mine';
-  });
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('chorez_view_mode', viewMode);
-      localStorage.setItem('chorez_week_start', currentWeekStart.toISOString());
-      localStorage.setItem('chorez_selected_day', selectedDay.toISOString());
-      localStorage.setItem('chorez_selected_room', selectedRoom);
+  const {
+    isHouseholdMenuOpen,
+    setIsHouseholdMenuOpen,
+    switchingHouseholdId,
+    setSwitchingHouseholdId,
+    respondingInvitationId,
+    setRespondingInvitationId,
+  } = useHouseholdSwitcher();
 
-      document.cookie = `chorez_view_mode=${viewMode}; path=/; max-age=31536000`;
-      document.cookie = `chorez_week_start=${currentWeekStart.toISOString()}; path=/; max-age=31536000`;
-      document.cookie = `chorez_selected_day=${selectedDay.toISOString()}; path=/; max-age=31536000`;
-      document.cookie = `chorez_selected_room=${selectedRoom}; path=/; max-age=31536000`;
-    } catch {}
-  }, [viewMode, currentWeekStart, selectedDay, selectedRoom]);
+  const {
+    isInviteOpen,
+    setIsInviteOpen,
+    inviteEmail,
+    setInviteEmail,
+    isInviting,
+    setIsInviting,
+    inviteError,
+    setInviteError,
+    openInviteMember,
+  } = useInviteMember();
 
-  // Restore a running stopwatch (if any) after a reload — this is what lets timing
-  // survive the device being locked and the app/tab being reopened later.
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STOPWATCH_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed.taskId === "string" && typeof parsed.startedAt === "number") {
-          // eslint-disable-next-line react-hooks/set-state-in-effect
-          setStopwatch(parsed);
-        }
-      }
-    } catch {
-      // ignore corrupt/unavailable storage
-    }
-  }, []);
+  const {
+    isAddTaskOpen,
+    setIsAddTaskOpen,
+    newTaskTitle,
+    setNewTaskTitle,
+    newTaskRoomId,
+    setNewTaskRoomId,
+    newTaskDuration,
+    setNewTaskDuration,
+    newTaskLastCompleted,
+    setNewTaskLastCompleted,
+    newTaskFrequency,
+    setNewTaskFrequency,
+    newTaskFrequencyInterval,
+    setNewTaskFrequencyInterval,
+    isAddingTask,
+    setIsAddingTask,
+    openAddTask,
+  } = useAddTaskForm(selectableRooms);
 
-  // Keep the displayed elapsed time in sync with the wall clock while a stopwatch is
-  // running. Recomputing from `startedAt` (rather than counting ticks) means the value
-  // is still correct even after the tab was frozen/backgrounded for a while.
-  useEffect(() => {
-    if (!stopwatch) return;
-    const sync = () => setStopwatchNow(Date.now());
-    sync();
-    const interval = setInterval(sync, 1000);
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") sync();
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-    window.addEventListener("focus", sync);
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibility);
-      window.removeEventListener("focus", sync);
-    };
-  }, [stopwatch]);
+  const {
+    isAddRoomOpen,
+    setIsAddRoomOpen,
+    isAddRoomFromTask,
+    newRoomName,
+    setNewRoomName,
+    newRoomIconName,
+    setNewRoomIconName,
+    isAddingRoom,
+    setIsAddingRoom,
+    openAddRoom,
+  } = useAddRoomForm(ICON_OPTIONS[0]);
 
-  const stopwatchElapsedMs = stopwatch ? Math.max(0, stopwatchNow - stopwatch.startedAt) : 0;
-  const stopwatchCapMs = MAX_STOPWATCH_MINUTES * 60 * 1000;
-  const stopwatchDisplayMs = Math.min(stopwatchElapsedMs, stopwatchCapMs);
-  const isStopwatchCapped = stopwatchElapsedMs >= stopwatchCapMs;
-
-  // Household switcher state
-  const [isHouseholdMenuOpen, setIsHouseholdMenuOpen] = useState(false);
-  const [switchingHouseholdId, setSwitchingHouseholdId] = useState<string | null>(null);
-
-  // Invitation banner state
-  const [respondingInvitationId, setRespondingInvitationId] = useState<string | null>(null);
-
-  // Invite Member modal state
-  const [isInviteOpen, setIsInviteOpen] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [isInviting, setIsInviting] = useState(false);
-  const [inviteError, setInviteError] = useState<string | null>(null);
-
-  // Add Task form state
-  const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
-  const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [newTaskRoomId, setNewTaskRoomId] = useState("");
-  const [newTaskDuration, setNewTaskDuration] = useState("");
-  const [newTaskLastCompleted, setNewTaskLastCompleted] = useState(() => new Date().toLocaleDateString('en-CA'));
-  const [newTaskFrequency, setNewTaskFrequency] = useState<ChoreFrequency>('weekly');
-  const [newTaskFrequencyInterval, setNewTaskFrequencyInterval] = useState("1");
-  const [isAddingTask, setIsAddingTask] = useState(false);
-
-  // Add Room form state
-  const [isAddRoomOpen, setIsAddRoomOpen] = useState(false);
-  const [isAddRoomFromTask, setIsAddRoomFromTask] = useState(false);
-  const [newRoomName, setNewRoomName] = useState("");
-  const [newRoomIconName, setNewRoomIconName] = useState<string>(ICON_OPTIONS[0]);
-  const [isAddingRoom, setIsAddingRoom] = useState(false);
-
-  // Push notification state
-  const [isPushSupported, setIsPushSupported] = useState(false);
-  const [isSubscribed, setIsSubscribed] = useState(false);
-  const [isSubscribing, setIsSubscribing] = useState(false);
-
-  function urlBase64ToUint8Array(base64String: string) {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding)
-      .replace(/-/g, '+')
-      .replace(/_/g, '/');
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-  }
-
-  // Register Service Worker and check subscription
-  useEffect(() => {
-    try {
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      if (tz) {
-        document.cookie = `chorez_timezone=${encodeURIComponent(tz)}; path=/; max-age=31536000; SameSite=Lax`;
-      }
-    } catch {
-      // ignore
-    }
-
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsPushSupported(true);
-      navigator.serviceWorker.register('/sw.js')
-        .then(async (reg) => {
-          const sub = await reg.pushManager.getSubscription();
-          setIsSubscribed(!!sub);
-        })
-        .catch(err => console.error('SW registration failed:', err));
-    }
-  }, []);
-
-  const handleEnableNotifications = useCallback(async () => {
-    if (!isPushSupported) return;
-    setIsSubscribing(true);
-    try {
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        throw new Error('Permission not granted');
-      }
-
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!)
-      });
-
-      await fetch('/api/push/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          subscription,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-        }),
-      });
-
-      setIsSubscribed(true);
-    } catch (error) {
-      console.error('Push subscription failed:', error);
-      alert('Failed to enable notifications. Please check your browser settings.');
-    } finally {
-      setIsSubscribing(false);
-    }
-  }, [isPushSupported]);
+  const {
+    isPushSupported,
+    isSubscribed,
+    isSubscribing,
+    handleEnableNotifications,
+  } = usePushNotifications();
 
   // Refresh state and handler
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -521,6 +243,7 @@ export default function DashboardClient({
   };
 
   // Derived state
+  const currentUserId = initialDbUser?.id;
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
       const taskDate = (task.status === 'completed' && task.completed_at)
@@ -528,10 +251,10 @@ export default function DashboardClient({
         : (task.due_date ? new Date(task.due_date) : null);
       const dayMatch = !!taskDate && isSameDay(taskDate, selectedDay);
       const roomMatch = selectedRoom === "all" || task.room_id === selectedRoom;
-      const assignmentMatch = viewMode === 'household' || task.assigned_user_id === initialDbUser?.id;
+      const assignmentMatch = viewMode === 'household' || task.assigned_user_id === currentUserId;
       return dayMatch && roomMatch && assignmentMatch;
     });
-  }, [tasks, selectedDay, selectedRoom, viewMode, initialDbUser]);
+  }, [tasks, selectedDay, selectedRoom, viewMode, currentUserId]);
 
   const incompleteTasksCount = useMemo(() => {
     return filteredTasks.filter(task => task.status !== 'completed').length;
@@ -653,12 +376,6 @@ export default function DashboardClient({
     }
   };
 
-  const openInviteMember = () => {
-    setInviteEmail("");
-    setInviteError(null);
-    setIsInviteOpen(true);
-  };
-
   const isInviteValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail.trim());
 
   const handleInviteSubmit = async () => {
@@ -674,16 +391,6 @@ export default function DashboardClient({
     } finally {
       setIsInviting(false);
     }
-  };
-
-  const openAddTask = () => {
-    setNewTaskTitle("");
-    setNewTaskRoomId(selectableRooms[0]?.id ?? "");
-    setNewTaskDuration("");
-    setNewTaskLastCompleted(new Date().toLocaleDateString('en-CA'));
-    setNewTaskFrequency('weekly');
-    setNewTaskFrequencyInterval("1");
-    setIsAddTaskOpen(true);
   };
 
   const isCustomIntervalFrequency = newTaskFrequency === 'every-x-days' || newTaskFrequency === 'every-x-weeks';
@@ -712,13 +419,6 @@ export default function DashboardClient({
     } finally {
       setIsAddingTask(false);
     }
-  };
-
-  const openAddRoom = (fromTask: boolean) => {
-    setNewRoomName("");
-    setNewRoomIconName(ICON_OPTIONS[0]);
-    setIsAddRoomFromTask(fromTask);
-    setIsAddRoomOpen(true);
   };
 
   const isAddRoomValid = newRoomName.trim().length > 0 && !!newRoomIconName;
@@ -750,36 +450,12 @@ export default function DashboardClient({
     setCompletingTask(task);
   };
 
-  const clearStopwatch = useCallback(() => {
-    setStopwatch(null);
-    try {
-      localStorage.removeItem(STOPWATCH_STORAGE_KEY);
-    } catch {
-      // ignore unavailable storage
-    }
-  }, []);
-
-  const handleStartStopwatch = (task: Task) => {
-    const next = { taskId: task.id, startedAt: Date.now() };
-    setStopwatch(next);
-    setStopwatchNow(next.startedAt);
-    try {
-      localStorage.setItem(STOPWATCH_STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      // ignore unavailable storage
-    }
-  };
-
   // Stops the running stopwatch for `task` and opens the completion dialog
   // pre-filled with the elapsed time (capped at MAX_STOPWATCH_MINUTES).
   const handleStopStopwatch = (task: Task) => {
-    if (!stopwatch || stopwatch.taskId !== task.id) return;
-    const rawElapsedMs = Date.now() - stopwatch.startedAt;
-    const cappedMs = Math.min(rawElapsedMs, MAX_STOPWATCH_MINUTES * 60 * 1000);
-    const minutes = Math.max(1, Math.round(cappedMs / 60000));
-    const capped = rawElapsedMs > MAX_STOPWATCH_MINUTES * 60 * 1000;
-    clearStopwatch();
-    openCompleteTask(task, minutes, capped);
+    const result = stopStopwatch(task);
+    if (!result) return;
+    openCompleteTask(task, result.minutes, result.capped);
   };
 
   // Used by the "Done" button: if a stopwatch happens to be running for this
@@ -848,12 +524,6 @@ export default function DashboardClient({
     }
   };
 
-  const openEditFrequency = (task: Task) => {
-    setEditingFrequencyTask(task);
-    setEditFrequencyValue(task.frequency);
-    setEditFrequencyInterval(String(task.frequency_interval ?? 1));
-  };
-
   const isEditCustomIntervalFrequency = editFrequencyValue === 'every-x-days' || editFrequencyValue === 'every-x-weeks';
 
   const isEditFrequencyValid =
@@ -875,11 +545,6 @@ export default function DashboardClient({
     } finally {
       setIsUpdatingFrequency(false);
     }
-  };
-
-  const openEditRoom = (task: Task) => {
-    setEditingRoomTask(task);
-    setEditRoomValue(task.room_id ?? "");
   };
 
   const handleUpdateRoom = async () => {
@@ -963,1428 +628,214 @@ export default function DashboardClient({
       </AnimatePresence>
 
       {/* 1. HEADER */}
-      <header className="px-6 pt-10 pb-6 bg-white/50 backdrop-blur-md sticky top-0 z-10 border-b border-indigo-50">
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <h1 suppressHydrationWarning className="text-2xl font-bold tracking-tight">
-              {greeting}{userName ? `, ${userName}` : ''}! 👋
-            </h1>
-            <p className="text-indigo-600/70 font-medium">
-              {viewMode === 'mine' ? (
-                <>You have <span className="text-indigo-600 font-bold">{incompleteTasksCount} tasks</span> left today.</>
-              ) : (
-                <>Household has <span className="text-indigo-600 font-bold">{incompleteTasksCount} tasks</span> today.</>
-              )}
-            </p>
-            {households.length > 1 && (
-              <div className="relative mt-2 inline-block">
-                <button
-                  onClick={() => setIsHouseholdMenuOpen((prev) => !prev)}
-                  className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-indigo-500 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-full transition-colors"
-                >
-                  <Home size={12} />
-                  {activeHousehold?.name ?? "Select Household"}
-                  <ChevronDown
-                    size={12}
-                    className={cn("transition-transform", isHouseholdMenuOpen && "rotate-180")}
-                  />
-                </button>
-                <AnimatePresence>
-                  {isHouseholdMenuOpen && (
-                    <>
-                      <div
-                        onClick={() => setIsHouseholdMenuOpen(false)}
-                        className="fixed inset-0 z-20"
-                      />
-                      <motion.div
-                        initial={{ opacity: 0, y: -6, scale: 0.97 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -6, scale: 0.97 }}
-                        transition={{ duration: 0.15 }}
-                        className="absolute left-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-indigo-50 p-2 z-30"
-                      >
-                        {households.map((household) => {
-                          const isActive = household.id === activeHousehold?.id;
-                          const isSwitching = switchingHouseholdId === household.id;
-                          return (
-                            <button
-                              key={household.id}
-                              onClick={() => handleSwitchHousehold(household.id)}
-                              disabled={isSwitching}
-                              className={cn(
-                                "w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-left transition-colors disabled:opacity-50",
-                                isActive ? "bg-indigo-600 text-white" : "hover:bg-indigo-50 text-indigo-700"
-                              )}
-                            >
-                              <span className="min-w-0">
-                                <span className="block font-bold text-sm truncate">{household.name}</span>
-                                <span className={cn("block text-[10px] uppercase tracking-widest font-bold", isActive ? "text-indigo-200" : "text-indigo-400")}>
-                                  {household.role}
-                                </span>
-                              </span>
-                              {isSwitching ? (
-                                <Loader2 size={14} className="animate-spin shrink-0" />
-                              ) : isActive ? (
-                                <Check size={14} className="shrink-0" />
-                              ) : null}
-                            </button>
-                          );
-                        })}
-                      </motion.div>
-                    </>
-                  )}
-                </AnimatePresence>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              aria-label="Refresh Tasks"
-              title="Refresh Tasks"
-              className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw size={18} className={cn(isRefreshing && "animate-spin")} />
-            </button>
-            <button
-              onClick={openProfileSettings}
-              aria-label="Profile Settings"
-              title="Profile Settings"
-              className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-            >
-              <Settings size={18} />
-            </button>
-            <a
-              href="/auth/logout"
-              aria-label="Log Out"
-              title="Log Out"
-              className="p-2.5 rounded-full text-indigo-300 hover:text-rose-500 hover:bg-rose-50 transition-colors"
-            >
-              <LogOut size={18} />
-            </a>
-            <div aria-hidden="true" className="w-px h-6 bg-indigo-100" />
-            <button
-              onClick={openAddTask}
-              aria-label="Add Task"
-              title="Add Task"
-              className="p-2 bg-indigo-600 text-white rounded-full shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95"
-            >
-              <Plus size={24} />
-            </button>
-          </div>
-        </div>
-        <button
-          onClick={openInviteMember}
-          className="flex items-center gap-2 text-sm font-semibold bg-white border border-indigo-100 px-4 py-2 rounded-2xl shadow-sm hover:border-indigo-200 transition-colors w-full justify-center"
-        >
-          <UserIcon size={16} className="text-indigo-400" />
-          Invite Member
-        </button>
-
-        <div className="flex bg-indigo-50/50 p-1 rounded-2xl mt-4 relative">
-          <motion.div
-            layoutId="activeTab"
-            className="absolute inset-y-1 bg-white rounded-xl shadow-sm z-0"
-            initial={false}
-            animate={{
-              left: viewMode === 'mine' ? '4px' : '50%',
-              right: viewMode === 'mine' ? '50%' : '4px',
-            }}
-            transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-          />
-          <button
-            onClick={() => setViewMode('mine')}
-            className={cn(
-              "flex-1 py-2 text-sm font-black rounded-xl transition-colors relative z-10",
-              viewMode === 'mine' ? "text-indigo-600" : "text-indigo-400 hover:text-indigo-500"
-            )}
-          >
-            My Tasks
-          </button>
-          <button
-            onClick={() => setViewMode('household')}
-            title={`${users.length} household member${users.length === 1 ? "" : "s"}`}
-            className={cn(
-              "flex-1 py-2 text-sm font-black rounded-xl transition-colors relative z-10",
-              viewMode === 'household' ? "text-indigo-600" : "text-indigo-400 hover:text-indigo-500"
-            )}
-          >
-            Household
-          </button>
-        </div>
-      </header>
+      <DashboardHeader
+        greeting={greeting}
+        userName={userName}
+        incompleteTasksCount={incompleteTasksCount}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        users={users}
+        households={households}
+        activeHousehold={activeHousehold}
+        isHouseholdMenuOpen={isHouseholdMenuOpen}
+        setIsHouseholdMenuOpen={setIsHouseholdMenuOpen}
+        switchingHouseholdId={switchingHouseholdId}
+        handleSwitchHousehold={handleSwitchHousehold}
+        isRefreshing={isRefreshing}
+        handleRefresh={handleRefresh}
+        openProfileSettings={openProfileSettings}
+        openAddTask={openAddTask}
+        openInviteMember={openInviteMember}
+      />
 
       {/* 2. WEEKLY CALENDAR SLIDER */}
-      <section className="mt-8 overflow-hidden">
-        <div className="flex items-center justify-between px-6 mb-3">
-          <button
-            onClick={goToPreviousDay}
-            aria-label="Previous Day"
-            title="Previous Day"
-            className="p-2 rounded-full text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors active:scale-90"
-          >
-            <ChevronLeft size={20} />
-          </button>
-          <button
-            onClick={goToCurrentWeek}
-            disabled={isCurrentWeek}
-            className={cn(
-              "text-sm font-black tracking-tight transition-colors rounded-xl px-3 py-1",
-              isCurrentWeek
-                ? "text-indigo-900 cursor-default"
-                : "text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50"
-            )}
-          >
-            {weekRangeLabel}
-          </button>
-          <button
-            onClick={goToNextDay}
-            aria-label="Next Day"
-            title="Next Day"
-            className="p-2 rounded-full text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors active:scale-90"
-          >
-            <ChevronRight size={20} />
-          </button>
-        </div>
-        <div className="flex gap-4 overflow-x-auto px-6 pb-4 scrollbar-hide snap-x">
-          {weekDays.map((day) => {
-            const isSelected = isSameDay(day.fullDate, selectedDay);
-            return (
-              <button
-                key={day.date}
-                onClick={() => setSelectedDay(day.fullDate)}
-                className={cn(
-                  "flex flex-col items-center min-w-17.5 py-4 rounded-3xl transition-all snap-center",
-                  isSelected
-                    ? "bg-indigo-600 text-white shadow-xl shadow-indigo-200 scale-105" 
-                    : "bg-white text-indigo-400 border border-indigo-50"
-                )}
-              >
-                <span className="text-xs font-bold uppercase tracking-wider mb-1">{day.label}</span>
-                <span className="text-lg font-bold">{day.date.split(" ")[1]}</span>
-                {day.isToday && !isSelected && (
-                  <div className="w-1 h-1 bg-indigo-600 rounded-full mt-1" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </section>
+      <WeekStrip
+        weekDays={weekDays}
+        selectedDay={selectedDay}
+        setSelectedDay={setSelectedDay}
+        goToPreviousDay={goToPreviousDay}
+        goToNextDay={goToNextDay}
+        goToCurrentWeek={goToCurrentWeek}
+        isCurrentWeek={isCurrentWeek}
+        weekRangeLabel={weekRangeLabel}
+      />
 
       {/* 3. ROOM TABS / CATEGORIES */}
-      <section className="mt-8 px-6">
-        <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
-          {rooms.map((room) => {
-            const isFav = favoriteRooms.includes(room.id);
-            const Icon = getRoomIcon(room.icon_name);
-            const isActive = selectedRoom === room.id;
-            
-            return (
-              <button
-                key={room.id}
-                onClick={() => setSelectedRoom(room.id)}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-3 rounded-2xl border transition-all whitespace-nowrap group",
-                  isActive
-                    ? "bg-indigo-900 border-indigo-900 text-white shadow-lg"
-                    : "bg-white border-indigo-50 text-indigo-600 hover:border-indigo-200"
-                )}
-              >
-                <Icon size={18} className={cn(isActive ? "text-indigo-200" : "text-indigo-400")} />
-                <span className="font-bold text-sm">{room.name}</span>
-                {room.id !== "all" && (
-                  <Star 
-                    size={14} 
-                    onClick={(e) => toggleFavoriteRoom(room.id, e)}
-                    className={cn(
-                      "ml-1 transition-colors",
-                      isFav ? "fill-amber-400 text-amber-400" : "text-indigo-200 group-hover:text-indigo-300"
-                    )} 
-                  />
-                )}
-              </button>
-            );
-          })}
-          <button
-            onClick={() => openAddRoom(false)}
-            aria-label="Add Room"
-            title="Add Room"
-            className="flex items-center gap-2 px-4 py-3 rounded-2xl border border-dashed border-indigo-200 text-indigo-400 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/50 transition-all whitespace-nowrap"
-          >
-            <Plus size={18} />
-            <span className="font-bold text-sm">Add Room</span>
-          </button>
-        </div>
-      </section>
+      <RoomFilterBar
+        rooms={rooms}
+        selectedRoom={selectedRoom}
+        setSelectedRoom={setSelectedRoom}
+        favoriteRooms={favoriteRooms}
+        toggleFavoriteRoom={toggleFavoriteRoom}
+        openAddRoom={openAddRoom}
+      />
 
       {/* 4. TASK LIST */}
-      <section className="mt-6 px-6 space-y-4">
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold">
-              {viewMode === 'mine' ? "My Tasks" : "Household Tasks"}
-            </h2>
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              aria-label="Refresh tasks"
-              title="Refresh tasks"
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-bold transition-all active:scale-95 disabled:opacity-50"
-            >
-              <RefreshCw size={12} className={cn(isRefreshing && "animate-spin")} />
-              <span>Refresh</span>
-            </button>
-          </div>
-          <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full uppercase tracking-widest">
-            {getDayLabel(selectedDay)}
-          </span>
-        </div>
-        
-        <AnimatePresence mode="popLayout">
-          {filteredTasks.length > 0 ? (
-            filteredTasks.map((task) => {
-              const isFav = favoriteTasks.includes(task.chore_id);
-              const isCompleted = task.status === 'completed';
-              const avatarColor = task.assigned_user_color || "bg-indigo-100 text-indigo-700";
-              const durationLabel = task.estimated_duration_minutes != null
-                ? `${task.estimated_duration_minutes}m`
-                : "—";
-              
-              const completedAtTime = task.completed_at 
-                ? new Date(task.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                : null;
-
-              return (
-                <motion.div
-                  key={task.id}
-                  layout
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className={cn(
-                    "p-5 rounded-4xl border transition-all group",
-                    isCompleted 
-                      ? "bg-indigo-50/30 border-indigo-100 opacity-80" 
-                      : "bg-white border-indigo-50 shadow-sm hover:shadow-md"
-                  )}
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded-md">
-                          {task.room_name ?? "No Room"}
-                        </span>
-                        {!isCompleted && (
-                          <button onClick={() => toggleFavoriteTask(task.chore_id)}>
-                            <Star 
-                              size={16} 
-                              className={cn(
-                                "transition-all active:scale-125",
-                                isFav ? "fill-amber-400 text-amber-400" : "text-indigo-100 hover:text-indigo-300"
-                              )} 
-                            />
-                          </button>
-                        )}
-                        {isCompleted && (
-                          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md flex items-center gap-1">
-                            <Check size={10} />
-                            Done
-                          </span>
-                        )}
-                        <button 
-                          onClick={() => openEditFrequency(task)}
-                          aria-label="Edit frequency"
-                          className="opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity p-1 -m-1 text-indigo-300 md:text-indigo-200 hover:text-indigo-500 active:scale-125"
-                          title="Edit frequency"
-                        >
-                          <Repeat size={16} />
-                        </button>
-                        <button 
-                          onClick={() => openEditRoom(task)}
-                          aria-label="Change room"
-                          className="opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity p-1 -m-1 text-indigo-300 md:text-indigo-200 hover:text-indigo-500 active:scale-125"
-                          title="Change room"
-                        >
-                          <DoorOpen size={16} />
-                        </button>
-                        <button 
-                          onClick={() => setDeletingChore(task)}
-                          aria-label="Delete chore template"
-                          className="opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity p-1 -m-1 text-indigo-300 md:text-indigo-200 hover:text-rose-400 active:scale-125"
-                          title="Delete chore template"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                      <h3 className={cn(
-                        "font-bold text-lg leading-tight transition-colors",
-                        isCompleted ? "text-indigo-900/60" : "group-hover:text-indigo-600"
-                      )}>
-                        {task.title}
-                      </h3>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <div className={cn("w-10 h-10 rounded-2xl overflow-hidden flex items-center justify-center font-black text-sm shadow-sm", avatarColor)}>
-                        {task.assigned_user_avatar_url ? (
-                          <img
-                            src={task.assigned_user_avatar_url}
-                            alt={task.assigned_user_name ?? "Assigned user"}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          task.assigned_user_avatar ?? "?"
-                        )}
-                      </div>
-                      <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-tighter">
-                        {isCompleted ? (
-                          <>Completed by {task.assigned_user_name?.split(' ')[0] ?? "User"}</>
-                        ) : (
-                          task.assigned_user_name ?? "Unassigned"
-                        )}
-                      </span>
-                    </div>
-                  </div>
-
-                  {isCompleted && (
-                    <div className="mt-4 space-y-3 p-4 bg-white/50 rounded-2xl border border-indigo-50/50">
-                      <div className="flex items-center justify-between text-xs font-bold text-indigo-400">
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-1">
-                            <Clock size={12} />
-                            Took {task.actual_duration_minutes}m
-                          </div>
-                          {completedAtTime && (
-                            <div className="flex items-center gap-1">
-                              <Star size={12} className="text-amber-400 fill-amber-400" />
-                              {task.effort_rating}/5
-                            </div>
-                          )}
-                        </div>
-                        <div suppressHydrationWarning className="text-[10px] uppercase tracking-wider">{completedAtTime}</div>
-                      </div>
-                      {task.notes && (
-                        <div className="flex gap-2 text-sm text-indigo-600/70 italic bg-indigo-50/30 p-2 rounded-xl">
-                          <MessageSquare size={14} className="shrink-0 mt-0.5 opacity-50" />
-                          <p className="leading-tight">{task.notes}</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {!isCompleted && (() => {
-                    const isTimingThisTask = stopwatch?.taskId === task.id;
-                    const isTimingOtherTask = !!stopwatch && !isTimingThisTask;
-                    return (
-                      <div className="flex items-center justify-between mt-6">
-                        <div className="flex items-center gap-4 text-indigo-400">
-                          <div className="flex items-center gap-1.5 text-xs font-bold">
-                            <Clock size={14} />
-                            {durationLabel}
-                          </div>
-                          {isTimingThisTask && (
-                            <div className={cn(
-                              "flex items-center gap-1.5 text-xs font-black tabular-nums",
-                              isStopwatchCapped ? "text-rose-500" : "text-emerald-600"
-                            )}>
-                              <Timer size={14} className={cn(!isStopwatchCapped && "animate-pulse")} />
-                              {formatStopwatchTime(stopwatchDisplayMs)}
-                              {isStopwatchCapped && <span className="uppercase tracking-wide">Maxed</span>}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex gap-2">
-                          {!task.assigned_user_id && (
-                            <button 
-                              onClick={() => handleAssignToSelf(task.id)}
-                              disabled={isAssigningTask === task.id}
-                              className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-4 py-2.5 rounded-2xl font-bold text-sm transition-all active:scale-95 flex items-center gap-2 disabled:opacity-50"
-                            >
-                              {isAssigningTask === task.id ? (
-                                <Loader2 size={16} className="animate-spin" />
-                              ) : (
-                                <UserIcon size={16} />
-                              )}
-                              Assign to Me
-                            </button>
-                          )}
-                          {isTimingThisTask ? (
-                            <button
-                              onClick={() => handleStopStopwatch(task)}
-                              aria-label="Stop stopwatch"
-                              title="Stop timer"
-                              className="bg-amber-100 hover:bg-amber-200 text-amber-700 p-2.5 rounded-2xl transition-all active:scale-95"
-                            >
-                              <Square size={16} />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleStartStopwatch(task)}
-                              disabled={isTimingOtherTask}
-                              aria-label="Start stopwatch"
-                              title={isTimingOtherTask ? "Stop the other running timer first" : "Time this task"}
-                              className="bg-indigo-100 hover:bg-indigo-200 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-700 p-2.5 rounded-2xl transition-all active:scale-95"
-                            >
-                              <Timer size={16} />
-                            </button>
-                          )}
-                          <button 
-                            onClick={() => handleFinishTask(task)}
-                            className="bg-[#88A47C] hover:bg-[#748D69] text-white px-6 py-2.5 rounded-2xl font-bold text-sm shadow-lg shadow-green-100 transition-all active:scale-95 flex items-center gap-2"
-                          >
-                            <CheckCircle2 size={16} />
-                            Done
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </motion.div>
-              );
-            })
-          ) : (
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }}
-              className="py-12 flex flex-col items-center text-center opacity-40"
-            >
-              <div className="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mb-4">
-                <Search size={24} />
-              </div>
-              <p className="font-bold">No tasks found for this selection</p>
-              <p className="text-sm">Enjoy your free time!</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </section>
+      <TaskList
+        viewMode={viewMode}
+        filteredTasks={filteredTasks}
+        selectedDay={selectedDay}
+        isRefreshing={isRefreshing}
+        handleRefresh={handleRefresh}
+        favoriteTasks={favoriteTasks}
+        toggleFavoriteTask={toggleFavoriteTask}
+        openEditFrequency={openEditFrequency}
+        openEditRoom={openEditRoom}
+        onDeleteChore={setDeletingChore}
+        stopwatch={stopwatch}
+        stopwatchDisplayMs={stopwatchDisplayMs}
+        isStopwatchCapped={isStopwatchCapped}
+        startStopwatch={startStopwatch}
+        handleStopStopwatch={handleStopStopwatch}
+        handleAssignToSelf={handleAssignToSelf}
+        isAssigningTask={isAssigningTask}
+        handleFinishTask={handleFinishTask}
+      />
 
       {/* 5. COMPLETE TASK MODAL (Drawer) */}
       <AnimatePresence>
         {completingTask && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => !isCompletingTask && setCompletingTask(null)}
-              className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-40"
-            />
-            
-            {/* Drawer */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[3rem] p-8 z-50 shadow-2xl max-w-lg mx-auto border-t border-indigo-50"
-            >
-              <div className="w-12 h-1.5 bg-indigo-100 rounded-full mx-auto mb-8" />
-              
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h2 className="text-2xl font-black mb-1">Finish Task</h2>
-                  <p className="text-indigo-400 font-bold">{completingTask.title}</p>
-                </div>
-                <button 
-                  onClick={() => setCompletingTask(null)}
-                  disabled={isCompletingTask}
-                  className="p-2 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
-                >
-                  <X size={20} className="text-indigo-300" />
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                {/* Duration Input */}
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                    Actual Minutes Taken
-                  </label>
-                  <div className="relative">
-                    <input 
-                      type="number" 
-                      placeholder="e.g. 20"
-                      value={actualMinutes}
-                      onChange={(e) => setActualMinutes(e.target.value)}
-                      className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
-                    />
-                    <div className="absolute right-5 top-1/2 -translate-y-1/2 text-indigo-400 font-bold">min</div>
-                  </div>
-                  {wasStopwatchCapped && (
-                    <p className="text-xs font-bold text-amber-500 mt-2 ml-1">
-                      The timer ran past {MAX_STOPWATCH_MINUTES} min, so we capped the pre-filled time — feel free to adjust it.
-                    </p>
-                  )}
-                </div>
-
-                {/* Rating */}
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-3 ml-1">
-                    Effort / Satisfaction
-                  </label>
-                  <div className="flex justify-between px-2">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button 
-                        key={star} 
-                        onClick={() => setRating(star)}
-                        className="p-2 hover:scale-125 transition-transform active:scale-90"
-                      >
-                        <Star 
-                          size={32} 
-                          className={cn(
-                            "transition-colors",
-                            rating >= star ? "fill-amber-400 text-amber-400" : "text-indigo-100 hover:text-amber-200"
-                          )} 
-                        />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Notes */}
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                    Notes
-                  </label>
-                  <div className="relative">
-                    <textarea 
-                      placeholder="Any issues or things to note?"
-                      rows={3}
-                      value={completionNotes}
-                      onChange={(e) => setCompletionNotes(e.target.value)}
-                      className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold transition-all resize-none"
-                    />
-                    <MessageSquare size={20} className="absolute right-5 top-5 text-indigo-200" />
-                  </div>
-                </div>
-
-                {/* Submit */}
-                <button 
-                  onClick={handleSubmitCompletion}
-                  disabled={isCompletingTask}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-5 rounded-4xl font-black text-lg shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] mt-4 flex items-center justify-center gap-2"
-                >
-                  {isCompletingTask ? (
-                    <>
-                      <Loader2 size={20} className="animate-spin" />
-                      Submitting...
-                    </>
-                  ) : (
-                    "Submit Completion"
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          </>
+          <CompleteTaskModal
+            task={completingTask}
+            actualMinutes={actualMinutes}
+            setActualMinutes={setActualMinutes}
+            wasStopwatchCapped={wasStopwatchCapped}
+            rating={rating}
+            setRating={setRating}
+            completionNotes={completionNotes}
+            setCompletionNotes={setCompletionNotes}
+            isCompletingTask={isCompletingTask}
+            onClose={() => setCompletingTask(null)}
+            onSubmit={handleSubmitCompletion}
+          />
         )}
       </AnimatePresence>
 
       {/* DELETE CHORE CONFIRMATION MODAL */}
       <AnimatePresence>
         {deletingChore && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => !isDeletingChore && !isDeletingInstance && setDeletingChore(null)}
-              className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-40"
-            />
-            
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[3rem] p-8 z-50 shadow-2xl max-w-lg mx-auto border-t border-indigo-50"
-            >
-              <div className="w-12 h-1.5 bg-indigo-100 rounded-full mx-auto mb-8" />
-              
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h2 className="text-2xl font-black mb-1 text-rose-600">Delete Task?</h2>
-                  <p className="text-indigo-400 font-bold">{deletingChore.title}</p>
-                </div>
-                <button 
-                  onClick={() => setDeletingChore(null)}
-                  disabled={isDeletingChore || isDeletingInstance}
-                  className="p-2 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
-                >
-                  <X size={20} className="text-indigo-300" />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div className="bg-amber-50 p-6 rounded-3xl border border-amber-100">
-                  <p className="text-amber-800 font-bold mb-1">Just this occurrence</p>
-                  <p className="text-amber-700 font-medium leading-relaxed mb-4">
-                    This occurrence will be removed. {deletingChore.title} will continue as scheduled.
-                  </p>
-                  <button 
-                    onClick={handleDeleteTaskInstance}
-                    disabled={isDeletingChore || isDeletingInstance}
-                    className="w-full bg-white border-2 border-amber-300 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed text-amber-700 py-4 rounded-4xl font-black text-base transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                  >
-                    {isDeletingInstance ? (
-                      <>
-                        <Loader2 size={18} className="animate-spin" />
-                        Removing...
-                      </>
-                    ) : (
-                      <>
-                        <Trash2 size={18} />
-                        Delete Just This Occurrence
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <div className="bg-rose-50 p-6 rounded-3xl border border-rose-100">
-                  <p className="text-rose-700 font-bold mb-1">This and every occurrence</p>
-                  <p className="text-rose-700 font-medium leading-relaxed mb-4">
-                    This will <span className="font-black underline">permanently remove</span> all scheduled and past occurrences of this recurring task. This action cannot be undone.
-                  </p>
-                  <button 
-                    onClick={handleDeleteChore}
-                    disabled={isDeletingChore || isDeletingInstance}
-                    className="w-full bg-rose-500 hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed text-white py-5 rounded-4xl font-black text-lg shadow-xl shadow-rose-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                  >
-                    {isDeletingChore ? (
-                      <>
-                        <Loader2 size={20} className="animate-spin" />
-                        Deleting...
-                      </>
-                    ) : (
-                      <>
-                        <Trash2 size={20} />
-                        Delete This and Every Occurrence
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <button 
-                  onClick={() => setDeletingChore(null)}
-                  disabled={isDeletingChore || isDeletingInstance}
-                  className="w-full bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed text-indigo-600 py-4 rounded-4xl font-bold transition-all active:scale-[0.98]"
-                >
-                  Cancel
-                </button>
-              </div>
-            </motion.div>
-          </>
+          <DeleteChoreConfirmDialog
+            chore={deletingChore}
+            isDeletingChore={isDeletingChore}
+            isDeletingInstance={isDeletingInstance}
+            onClose={() => setDeletingChore(null)}
+            onDeleteTaskInstance={handleDeleteTaskInstance}
+            onDeleteChore={handleDeleteChore}
+          />
         )}
       </AnimatePresence>
 
       {/* EDIT FREQUENCY MODAL */}
       <AnimatePresence>
         {editingFrequencyTask && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => !isUpdatingFrequency && setEditingFrequencyTask(null)}
-              className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-40"
-            />
-
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[3rem] p-8 z-50 shadow-2xl max-w-lg mx-auto border-t border-indigo-50 max-h-[90vh] overflow-y-auto"
-            >
-              <div className="w-12 h-1.5 bg-indigo-100 rounded-full mx-auto mb-8" />
-
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h2 className="text-2xl font-black mb-1">Edit Frequency</h2>
-                  <p className="text-indigo-400 font-bold">{editingFrequencyTask.title}</p>
-                </div>
-                <button
-                  onClick={() => setEditingFrequencyTask(null)}
-                  disabled={isUpdatingFrequency}
-                  className="p-2 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
-                >
-                  <X size={20} className="text-indigo-300" />
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                {/* Frequency */}
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                    Frequency
-                  </label>
-                  <select
-                    value={editFrequencyValue}
-                    onChange={(e) => setEditFrequencyValue(e.target.value as ChoreFrequency)}
-                    className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all appearance-none"
-                  >
-                    {FREQUENCY_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Custom Interval */}
-                {isEditCustomIntervalFrequency && (
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                      Repeat Every
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        min={1}
-                        placeholder="e.g. 3"
-                        value={editFrequencyInterval}
-                        onChange={(e) => setEditFrequencyInterval(e.target.value)}
-                        className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
-                      />
-                      <div className="absolute right-5 top-1/2 -translate-y-1/2 text-indigo-400 font-bold">
-                        {editFrequencyValue === 'every-x-weeks' ? 'weeks' : 'days'}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <p className="text-indigo-400 font-medium text-sm leading-relaxed px-1">
-                  Saving will recalculate this task&apos;s next due date based on its last completion and the new frequency.
-                </p>
-
-                {/* Submit */}
-                <button
-                  onClick={handleUpdateFrequency}
-                  disabled={isUpdatingFrequency || !isEditFrequencyValid}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-5 rounded-4xl font-black text-lg shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] mt-4 flex items-center justify-center gap-2"
-                >
-                  {isUpdatingFrequency ? (
-                    <>
-                      <Loader2 size={20} className="animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    "Update Frequency"
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          </>
+          <EditFrequencyModal
+            task={editingFrequencyTask}
+            editFrequencyValue={editFrequencyValue}
+            setEditFrequencyValue={setEditFrequencyValue}
+            editFrequencyInterval={editFrequencyInterval}
+            setEditFrequencyInterval={setEditFrequencyInterval}
+            isEditCustomIntervalFrequency={isEditCustomIntervalFrequency}
+            isEditFrequencyValid={isEditFrequencyValid}
+            isUpdatingFrequency={isUpdatingFrequency}
+            onClose={() => setEditingFrequencyTask(null)}
+            onSubmit={handleUpdateFrequency}
+          />
         )}
       </AnimatePresence>
 
       {/* EDIT ROOM MODAL */}
       <AnimatePresence>
         {editingRoomTask && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => !isUpdatingRoom && setEditingRoomTask(null)}
-              className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-40"
-            />
-
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[3rem] p-8 z-50 shadow-2xl max-w-lg mx-auto border-t border-indigo-50 max-h-[90vh] overflow-y-auto"
-            >
-              <div className="w-12 h-1.5 bg-indigo-100 rounded-full mx-auto mb-8" />
-
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h2 className="text-2xl font-black mb-1">Change Room</h2>
-                  <p className="text-indigo-400 font-bold">{editingRoomTask.title}</p>
-                </div>
-                <button
-                  onClick={() => setEditingRoomTask(null)}
-                  disabled={isUpdatingRoom}
-                  className="p-2 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
-                >
-                  <X size={20} className="text-indigo-300" />
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                {/* Room */}
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                    Room
-                  </label>
-                  <select
-                    value={editRoomValue}
-                    onChange={(e) => setEditRoomValue(e.target.value)}
-                    className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all appearance-none"
-                  >
-                    {selectableRooms.map((room) => (
-                      <option key={room.id} value={room.id}>
-                        {room.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <p className="text-indigo-400 font-medium text-sm leading-relaxed px-1">
-                  Moving this task will update the room for every past and upcoming occurrence of it.
-                </p>
-
-                {/* Submit */}
-                <button
-                  onClick={handleUpdateRoom}
-                  disabled={isUpdatingRoom || !editRoomValue}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-5 rounded-4xl font-black text-lg shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] mt-4 flex items-center justify-center gap-2"
-                >
-                  {isUpdatingRoom ? (
-                    <>
-                      <Loader2 size={20} className="animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    "Update Room"
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          </>
+          <EditRoomModal
+            task={editingRoomTask}
+            selectableRooms={selectableRooms}
+            editRoomValue={editRoomValue}
+            setEditRoomValue={setEditRoomValue}
+            isUpdatingRoom={isUpdatingRoom}
+            onClose={() => setEditingRoomTask(null)}
+            onSubmit={handleUpdateRoom}
+          />
         )}
       </AnimatePresence>
 
       {/* 6. ADD TASK MODAL (Drawer) */}
       <AnimatePresence>
         {isAddTaskOpen && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => !isAddingTask && setIsAddTaskOpen(false)}
-              className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-40"
-            />
-
-            {/* Drawer */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[3rem] p-8 z-50 shadow-2xl max-w-lg mx-auto border-t border-indigo-50 max-h-[90vh] overflow-y-auto"
-            >
-              <div className="w-12 h-1.5 bg-indigo-100 rounded-full mx-auto mb-8" />
-
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h2 className="text-2xl font-black mb-1">Add Task</h2>
-                  <p className="text-indigo-400 font-bold">Create a new chore</p>
-                </div>
-                <button
-                  onClick={() => setIsAddTaskOpen(false)}
-                  disabled={isAddingTask}
-                  className="p-2 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
-                >
-                  <X size={20} className="text-indigo-300" />
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                {/* Task Name */}
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                    Task Name
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Clean the fridge"
-                    value={newTaskTitle}
-                    onChange={(e) => setNewTaskTitle(e.target.value)}
-                    className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
-                  />
-                </div>
-
-                {/* Room */}
-                <div>
-                  <div className="flex items-center justify-between mb-2 ml-1 mr-1">
-                    <label className="block text-xs font-black uppercase tracking-widest text-indigo-400">
-                      Room
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => openAddRoom(true)}
-                      className="flex items-center gap-1 text-xs font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-700 transition-colors"
-                    >
-                      <Plus size={12} />
-                      New Room
-                    </button>
-                  </div>
-                  {selectableRooms.length > 0 ? (
-                    <select
-                      value={newTaskRoomId}
-                      onChange={(e) => setNewTaskRoomId(e.target.value)}
-                      className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all appearance-none"
-                    >
-                      {selectableRooms.map((room) => (
-                        <option key={room.id} value={room.id}>
-                          {room.name}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => openAddRoom(true)}
-                      className="w-full bg-indigo-50/50 hover:bg-indigo-50 rounded-2xl px-5 py-4 font-bold text-indigo-400 hover:text-indigo-600 text-left transition-colors"
-                    >
-                      No rooms yet — tap to add one.
-                    </button>
-                  )}
-                </div>
-
-                {/* Duration */}
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                    Time to Complete
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      min={1}
-                      placeholder="e.g. 20"
-                      value={newTaskDuration}
-                      onChange={(e) => setNewTaskDuration(e.target.value)}
-                      className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
-                    />
-                    <div className="absolute right-5 top-1/2 -translate-y-1/2 text-indigo-400 font-bold">min</div>
-                  </div>
-                </div>
-
-                {/* Frequency */}
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                    Frequency
-                  </label>
-                  <select
-                    value={newTaskFrequency}
-                    onChange={(e) => setNewTaskFrequency(e.target.value as typeof newTaskFrequency)}
-                    className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all appearance-none"
-                  >
-                    {FREQUENCY_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Custom Interval */}
-                {isCustomIntervalFrequency && (
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                      Repeat Every
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        min={1}
-                        placeholder="e.g. 3"
-                        value={newTaskFrequencyInterval}
-                        onChange={(e) => setNewTaskFrequencyInterval(e.target.value)}
-                        className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
-                      />
-                      <div className="absolute right-5 top-1/2 -translate-y-1/2 text-indigo-400 font-bold">
-                        {newTaskFrequency === 'every-x-weeks' ? 'weeks' : 'days'}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Last Completed */}
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                    Date Last Completed
-                  </label>
-                  <input
-                    type="date"
-                    value={newTaskLastCompleted}
-                    onChange={(e) => setNewTaskLastCompleted(e.target.value)}
-                    className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
-                  />
-                </div>
-
-                {/* Submit */}
-                <button
-                  onClick={handleAddTask}
-                  disabled={isAddingTask || !isAddTaskValid}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-5 rounded-4xl font-black text-lg shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] mt-4 flex items-center justify-center gap-2"
-                >
-                  {isAddingTask ? (
-                    <>
-                      <Loader2 size={20} className="animate-spin" />
-                      Adding...
-                    </>
-                  ) : (
-                    "Add Task"
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          </>
+          <AddTaskModal
+            selectableRooms={selectableRooms}
+            newTaskTitle={newTaskTitle}
+            setNewTaskTitle={setNewTaskTitle}
+            newTaskRoomId={newTaskRoomId}
+            setNewTaskRoomId={setNewTaskRoomId}
+            newTaskDuration={newTaskDuration}
+            setNewTaskDuration={setNewTaskDuration}
+            newTaskFrequency={newTaskFrequency}
+            setNewTaskFrequency={setNewTaskFrequency}
+            newTaskFrequencyInterval={newTaskFrequencyInterval}
+            setNewTaskFrequencyInterval={setNewTaskFrequencyInterval}
+            newTaskLastCompleted={newTaskLastCompleted}
+            setNewTaskLastCompleted={setNewTaskLastCompleted}
+            isCustomIntervalFrequency={isCustomIntervalFrequency}
+            isAddTaskValid={isAddTaskValid}
+            isAddingTask={isAddingTask}
+            onClose={() => setIsAddTaskOpen(false)}
+            onSubmit={handleAddTask}
+            onOpenAddRoom={() => openAddRoom(true)}
+          />
         )}
       </AnimatePresence>
 
       {/* 7. ADD ROOM MODAL (Drawer) */}
       <AnimatePresence>
         {isAddRoomOpen && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => !isAddingRoom && setIsAddRoomOpen(false)}
-              className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-[55]"
-            />
-
-            {/* Drawer */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[3rem] p-8 z-[60] shadow-2xl max-w-lg mx-auto border-t border-indigo-50 max-h-[90vh] overflow-y-auto"
-            >
-              <div className="w-12 h-1.5 bg-indigo-100 rounded-full mx-auto mb-8" />
-
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h2 className="text-2xl font-black mb-1">Add Room</h2>
-                  <p className="text-indigo-400 font-bold">Create a new space</p>
-                </div>
-                <button
-                  onClick={() => setIsAddRoomOpen(false)}
-                  disabled={isAddingRoom}
-                  className="p-2 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
-                >
-                  <X size={20} className="text-indigo-300" />
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                {/* Room Name */}
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                    Room Name
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Garage"
-                    value={newRoomName}
-                    onChange={(e) => setNewRoomName(e.target.value)}
-                    className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
-                  />
-                </div>
-
-                {/* Icon Selection */}
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-3 ml-1">
-                    Icon
-                  </label>
-                  <div className="flex flex-wrap gap-3">
-                    {ICON_OPTIONS.map((iconName) => {
-                      const Icon = ICON_MAP[iconName];
-                      const isSelected = newRoomIconName === iconName;
-                      return (
-                        <button
-                          key={iconName}
-                          type="button"
-                          onClick={() => setNewRoomIconName(iconName)}
-                          aria-label={iconName}
-                          title={iconName}
-                          className={cn(
-                            "w-14 h-14 rounded-2xl flex items-center justify-center border-2 transition-all active:scale-95",
-                            isSelected
-                              ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-200 scale-105"
-                              : "bg-indigo-50/50 border-transparent text-indigo-400 hover:border-indigo-200"
-                          )}
-                        >
-                          <Icon size={22} />
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Submit */}
-                <button
-                  onClick={handleAddRoom}
-                  disabled={isAddingRoom || !isAddRoomValid}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-5 rounded-4xl font-black text-lg shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] mt-4 flex items-center justify-center gap-2"
-                >
-                  {isAddingRoom ? (
-                    <>
-                      <Loader2 size={20} className="animate-spin" />
-                      Adding...
-                    </>
-                  ) : (
-                    "Add Room"
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          </>
+          <AddRoomModal
+            newRoomName={newRoomName}
+            setNewRoomName={setNewRoomName}
+            newRoomIconName={newRoomIconName}
+            setNewRoomIconName={setNewRoomIconName}
+            isAddRoomValid={isAddRoomValid}
+            isAddingRoom={isAddingRoom}
+            onClose={() => setIsAddRoomOpen(false)}
+            onSubmit={handleAddRoom}
+          />
         )}
       </AnimatePresence>
 
       {/* 8. PROFILE SETTINGS MODAL */}
       <AnimatePresence>
         {isProfileOpen && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsProfileOpen(false)}
-              className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-40"
-            />
-
-            {/* Modal */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-6"
-            >
-              <div
-                className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl border border-indigo-50"
-              >
-                <div className="flex justify-between items-start mb-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
-                      <Settings size={22} />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-black">Profile Settings</h2>
-                      <p className="text-indigo-400 text-sm font-bold">Update your details</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setIsProfileOpen(false)}
-                    className="p-2 hover:bg-indigo-50 rounded-full transition-colors"
-                  >
-                    <X size={20} className="text-indigo-300" />
-                  </button>
-                </div>
-
-                <div className="space-y-6">
-                  {/* Full Name Input */}
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                      Full Name
-                    </label>
-                    <div className="relative">
-                      <UserIcon size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-indigo-300" />
-                      <input
-                        type="text"
-                        value={profileName}
-                        onChange={(e) => setProfileName(e.target.value)}
-                        placeholder="Your name"
-                        className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl pl-12 pr-5 py-4 font-bold text-lg transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Notifications */}
-                  {isPushSupported && (
-                    <div>
-                      <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                        Daily Reminders
-                      </label>
-                      <button
-                        onClick={handleEnableNotifications}
-                        disabled={isSubscribing || isSubscribed}
-                        className={cn(
-                          "w-full flex items-center justify-center gap-3 py-4 rounded-2xl font-black transition-all active:scale-[0.98] border-2",
-                          isSubscribed 
-                            ? "bg-emerald-50 border-emerald-100 text-emerald-600 cursor-default" 
-                            : "bg-indigo-50 border-transparent text-indigo-600 hover:bg-indigo-100"
-                        )}
-                      >
-                        {isSubscribing ? (
-                          <Loader2 size={18} className="animate-spin" />
-                        ) : isSubscribed ? (
-                          <Bell size={18} />
-                        ) : (
-                          <BellOff size={18} />
-                        )}
-                        {isSubscribed ? "Notifications Enabled" : "Enable Daily Notifications"}
-                      </button>
-                      <p className="text-[10px] text-indigo-400 mt-2 ml-1 font-bold leading-tight">
-                        Receive a morning task summary and evening reminders for outstanding chores.
-                      </p>
-
-                      <div className="grid grid-cols-2 gap-3 mt-4">
-                        <div>
-                          <label className="block text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                            Morning Summary
-                          </label>
-                          <select
-                            value={morningNotificationHour}
-                            onChange={(e) => setMorningNotificationHour(Number(e.target.value))}
-                            className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-4 py-3 font-bold text-sm transition-all"
-                          >
-                            {HOUR_OPTIONS.map((hour) => (
-                              <option key={hour} value={hour}>
-                                {formatHourLabel(hour)}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                            Evening Reminder
-                          </label>
-                          <select
-                            value={eveningNotificationHour}
-                            onChange={(e) => setEveningNotificationHour(Number(e.target.value))}
-                            className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-4 py-3 font-bold text-sm transition-all"
-                          >
-                            {HOUR_OPTIONS.map((hour) => (
-                              <option key={hour} value={hour}>
-                                {formatHourLabel(hour)}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      onClick={() => setIsProfileOpen(false)}
-                      disabled={isSavingProfile}
-                      className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 py-4 rounded-2xl font-black transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSaveProfile}
-                      disabled={isSavingProfile || !profileName.trim()}
-                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                    >
-                      {isSavingProfile ? (
-                        <>
-                          <Loader2 size={18} className="animate-spin" />
-                          Saving...
-                        </>
-                      ) : (
-                        "Save Changes"
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </>
+          <ProfileModal
+            profileName={profileName}
+            setProfileName={setProfileName}
+            isPushSupported={isPushSupported}
+            isSubscribing={isSubscribing}
+            isSubscribed={isSubscribed}
+            handleEnableNotifications={handleEnableNotifications}
+            morningNotificationHour={morningNotificationHour}
+            setMorningNotificationHour={setMorningNotificationHour}
+            eveningNotificationHour={eveningNotificationHour}
+            setEveningNotificationHour={setEveningNotificationHour}
+            isSavingProfile={isSavingProfile}
+            onClose={() => setIsProfileOpen(false)}
+            onSubmit={handleSaveProfile}
+          />
         )}
       </AnimatePresence>
 
       {/* 9. INVITE MEMBER MODAL (Drawer) */}
       <AnimatePresence>
         {isInviteOpen && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => !isInviting && setIsInviteOpen(false)}
-              className="fixed inset-0 bg-indigo-900/40 backdrop-blur-sm z-40"
-            />
-
-            {/* Drawer */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[3rem] p-8 z-50 shadow-2xl max-w-lg mx-auto border-t border-indigo-50"
-            >
-              <div className="w-12 h-1.5 bg-indigo-100 rounded-full mx-auto mb-8" />
-
-              <div className="flex justify-between items-start mb-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
-                    <UserIcon size={22} />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-black">Invite Member</h2>
-                    <p className="text-indigo-400 text-sm font-bold">
-                      {activeHousehold ? `Add someone to "${activeHousehold.name}"` : "Add someone to your household"}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setIsInviteOpen(false)}
-                  disabled={isInviting}
-                  className="p-2 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
-                >
-                  <X size={20} className="text-indigo-300" />
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                {/* Invitee Email */}
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-                    Invitee Email
-                  </label>
-                  <div className="relative">
-                    <Mail size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-indigo-300" />
-                    <input
-                      type="email"
-                      placeholder="name@example.com"
-                      value={inviteEmail}
-                      onChange={(e) => {
-                        setInviteEmail(e.target.value);
-                        setInviteError(null);
-                      }}
-                      className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl pl-12 pr-5 py-4 font-bold text-lg transition-all"
-                    />
-                  </div>
-                  {inviteError && (
-                    <p className="text-rose-500 text-sm font-bold mt-2 ml-1">{inviteError}</p>
-                  )}
-                </div>
-
-                {/* Submit */}
-                <button
-                  onClick={handleInviteSubmit}
-                  disabled={isInviting || !isInviteValid}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-5 rounded-4xl font-black text-lg shadow-xl shadow-indigo-200 transition-all active:scale-[0.98] mt-4 flex items-center justify-center gap-2"
-                >
-                  {isInviting ? (
-                    <>
-                      <Loader2 size={20} className="animate-spin" />
-                      Sending...
-                    </>
-                  ) : (
-                    "Send Invite"
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          </>
+          <InviteMemberModal
+            activeHousehold={activeHousehold}
+            inviteEmail={inviteEmail}
+            setInviteEmail={setInviteEmail}
+            setInviteError={setInviteError}
+            inviteError={inviteError}
+            isInviting={isInviting}
+            isInviteValid={isInviteValid}
+            onClose={() => setIsInviteOpen(false)}
+            onSubmit={handleInviteSubmit}
+          />
         )}
       </AnimatePresence>
 

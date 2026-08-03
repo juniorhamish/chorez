@@ -3,12 +3,12 @@
 import { sql } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { getDbUser } from "./user-actions";
-import crypto from "crypto";
 import {
   calculateNextDueDate,
   isMoreFrequentThanWeekly,
   ensureUpcomingInstances,
 } from "@/lib/scheduling";
+import { getGravatarUrl } from "@/lib/gravatar";
 
 export type ChoreFrequency =
   | 'daily'
@@ -19,31 +19,18 @@ export type ChoreFrequency =
   | 'every-x-weeks'
   | 'on-demand';
 
-/**
- * Builds a Gravatar image URL for the given email address.
- * Returns null when no email is available (e.g. unassigned tasks).
- */
-function getGravatarUrl(email: string | null | undefined): string | null {
-  if (!email) return null;
-  const hash = crypto
-    .createHash("sha256")
-    .update(email.trim().toLowerCase())
-    .digest("hex");
-  return `https://www.gravatar.com/avatar/${hash}?d=identicon`;
-}
-
 export async function getRooms() {
   const dbUser = await getDbUser();
-  if (!dbUser || !dbUser.active_household_id) return [];
+  if (!dbUser?.active_household_id) return [];
 
   return await sql`
-    SELECT * FROM rooms WHERE household_id = ${dbUser.active_household_id} ORDER BY name ASC
+    SELECT * FROM rooms WHERE household_id = ${dbUser.active_household_id} ORDER BY name
   `;
 }
 
 export async function getHouseholdTasks() {
   const dbUser = await getDbUser();
-  if (!dbUser || !dbUser.active_household_id) return [];
+  if (!dbUser?.active_household_id) return [];
 
   // Fetch chore assignments with chore and room details
   const tasks = await sql`
@@ -72,7 +59,7 @@ export async function getHouseholdTasks() {
     LEFT JOIN rooms r ON c.room_id = r.id
     LEFT JOIN users u ON ca.assigned_user_id = u.id
     WHERE ca.household_id = ${dbUser.active_household_id}
-    ORDER BY ca.due_date ASC
+    ORDER BY ca.due_date
   `;
 
   return tasks.map((task) => ({
@@ -83,7 +70,7 @@ export async function getHouseholdTasks() {
 
 export async function getFavoriteRoomIds() {
   const dbUser = await getDbUser();
-  if (!dbUser || !dbUser.id) return [];
+  if (!dbUser?.id) return [];
 
   const favorites = await sql`
     SELECT target_id FROM user_favorites
@@ -95,7 +82,7 @@ export async function getFavoriteRoomIds() {
 
 export async function toggleFavoriteRoom(roomId: string) {
   const dbUser = await getDbUser();
-  if (!dbUser || !dbUser.id) throw new Error("User not found");
+  if (!dbUser?.id) throw new Error("User not found");
 
   const existing = await sql`
     SELECT 1 FROM user_favorites
@@ -120,7 +107,7 @@ export async function toggleFavoriteRoom(roomId: string) {
 
 export async function getFavoriteChoreIds() {
   const dbUser = await getDbUser();
-  if (!dbUser || !dbUser.id) return [];
+  if (!dbUser?.id) return [];
 
   const favorites = await sql`
     SELECT target_id FROM user_favorites
@@ -132,7 +119,7 @@ export async function getFavoriteChoreIds() {
 
 export async function toggleFavoriteChore(choreId: string) {
   const dbUser = await getDbUser();
-  if (!dbUser || !dbUser.id) throw new Error("User not found");
+  if (!dbUser?.id) throw new Error("User not found");
 
   const existing = await sql`
     SELECT 1 FROM user_favorites
@@ -157,7 +144,7 @@ export async function toggleFavoriteChore(choreId: string) {
 
 export async function getHouseholdUsers() {
     const dbUser = await getDbUser();
-    if (!dbUser || !dbUser.active_household_id) return [];
+    if (!dbUser?.active_household_id) return [];
   
     return await sql`
       SELECT id, full_name as name, avatar_label as avatar, color_theme as color 
@@ -175,7 +162,7 @@ export async function addChore(data: {
   frequency_interval?: number | null;
 }) {
   const dbUser = await getDbUser();
-  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
+  if (!dbUser?.active_household_id) throw new Error("User or active household not found");
 
   const { title, room_id, estimated_duration_minutes, last_completed_date, frequency } = data;
   const frequency_interval =
@@ -212,7 +199,7 @@ export async function addChore(data: {
 
 export async function deleteChore(choreId: string) {
   const dbUser = await getDbUser();
-  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
+  if (!dbUser?.active_household_id) throw new Error("User or active household not found");
 
   // Deleting the chore template cascades (ON DELETE CASCADE) to remove every
   // chore_assignments row that references it, i.e. all past/upcoming
@@ -231,7 +218,7 @@ export async function updateChoreFrequency(
   frequencyInterval?: number | null
 ) {
   const dbUser = await getDbUser();
-  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
+  if (!dbUser?.active_household_id) throw new Error("User or active household not found");
 
   const resolvedInterval =
     frequency === 'every-x-days' || frequency === 'every-x-weeks' ? frequencyInterval ?? 1 : null;
@@ -285,7 +272,7 @@ export async function updateChoreFrequency(
 
 export async function updateChoreRoom(choreId: string, roomId: string) {
   const dbUser = await getDbUser();
-  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
+  if (!dbUser?.active_household_id) throw new Error("User or active household not found");
 
   // Ensure the target room belongs to the same household before reassigning.
   const room = (await sql`
@@ -309,7 +296,7 @@ export async function updateChoreRoom(choreId: string, roomId: string) {
 
 export async function deleteTaskInstance(assignmentId: string) {
   const dbUser = await getDbUser();
-  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
+  if (!dbUser?.active_household_id) throw new Error("User or active household not found");
 
   // 1. Look up the instance and its chore's recurrence settings before removing it.
   const assignment = (await sql`
@@ -368,7 +355,7 @@ export async function deleteTaskInstance(assignmentId: string) {
 
 export async function assignTaskToSelf(assignmentId: string) {
   const dbUser = await getDbUser();
-  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
+  if (!dbUser?.active_household_id) throw new Error("User or active household not found");
 
   await sql`
     UPDATE chore_assignments
@@ -384,7 +371,7 @@ export async function addRoom(data: {
   icon_name: string;
 }) {
   const dbUser = await getDbUser();
-  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
+  if (!dbUser?.active_household_id) throw new Error("User or active household not found");
 
   const { name, icon_name } = data;
 
@@ -406,10 +393,10 @@ export async function completeTask(assignmentId: string, data: {
   completionDate?: string; // Optional YYYY-MM-DD from client to handle timezones correctly
 }) {
   const dbUser = await getDbUser();
-  if (!dbUser || !dbUser.active_household_id) throw new Error("User or active household not found");
+  if (!dbUser?.active_household_id) throw new Error("User or active household not found");
 
-  const { actual_duration_minutes, effort_rating, notes, completionDate: clientCompletionDate } = data;
-  const hasSetTime = actual_duration_minutes !== undefined && actual_duration_minutes !== null && !isNaN(actual_duration_minutes);
+  const { actual_duration_minutes, effort_rating, notes } = data;
+  const hasSetTime = actual_duration_minutes !== undefined && actual_duration_minutes !== null && !Number.isNaN(actual_duration_minutes);
 
   // 1. Get assignment and chore details
   const assignment = (await sql`
