@@ -467,20 +467,24 @@ export default function DashboardClient({
     return filteredTasks.filter(task => task.status !== 'completed').length;
   }, [filteredTasks]);
 
-  const goToPreviousWeek = () => {
-    const nextWeekStart = new Date(currentWeekStart);
-    nextWeekStart.setDate(currentWeekStart.getDate() - 7);
-    setCurrentWeekStart(nextWeekStart);
-    const lastDay = new Date(nextWeekStart);
-    lastDay.setDate(nextWeekStart.getDate() + 6);
-    setSelectedDay(lastDay);
+  const goToPreviousDay = () => {
+    const previousDay = new Date(selectedDay);
+    previousDay.setDate(selectedDay.getDate() - 1);
+    setSelectedDay(previousDay);
+    const previousDayWeekStart = getStartOfWeek(previousDay);
+    if (!isSameDay(previousDayWeekStart, currentWeekStart)) {
+      setCurrentWeekStart(previousDayWeekStart);
+    }
   };
 
-  const goToNextWeek = () => {
-    const nextWeekStart = new Date(currentWeekStart);
-    nextWeekStart.setDate(currentWeekStart.getDate() + 7);
-    setCurrentWeekStart(nextWeekStart);
-    setSelectedDay(new Date(nextWeekStart));
+  const goToNextDay = () => {
+    const nextDay = new Date(selectedDay);
+    nextDay.setDate(selectedDay.getDate() + 1);
+    setSelectedDay(nextDay);
+    const nextDayWeekStart = getStartOfWeek(nextDay);
+    if (!isSameDay(nextDayWeekStart, currentWeekStart)) {
+      setCurrentWeekStart(nextDayWeekStart);
+    }
   };
 
   const goToCurrentWeek = () => {
@@ -983,9 +987,9 @@ export default function DashboardClient({
       <section className="mt-8 overflow-hidden">
         <div className="flex items-center justify-between px-6 mb-3">
           <button
-            onClick={goToPreviousWeek}
-            aria-label="Previous Week"
-            title="Previous Week"
+            onClick={goToPreviousDay}
+            aria-label="Previous Day"
+            title="Previous Day"
             className="p-2 rounded-full text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors active:scale-90"
           >
             <ChevronLeft size={20} />
@@ -1003,9 +1007,9 @@ export default function DashboardClient({
             {weekRangeLabel}
           </button>
           <button
-            onClick={goToNextWeek}
-            aria-label="Next Week"
-            title="Next Week"
+            onClick={goToNextDay}
+            aria-label="Next Day"
+            title="Next Day"
             className="p-2 rounded-full text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors active:scale-90"
           >
             <ChevronRight size={20} />
