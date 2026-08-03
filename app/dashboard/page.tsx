@@ -5,6 +5,7 @@ import DashboardClient from "./dashboard-client";
 import type { Task, Room, HouseholdUser, Household, Invitation } from "@/lib/dashboard/types";
 import { getDbUser, getHouseholds, getInvitations } from "@/lib/actions/user-actions";
 import { getHouseholdTasks, getRooms, getHouseholdUsers, getFavoriteRoomIds, getFavoriteChoreIds } from "@/lib/actions/chore-actions";
+import { getLatestUndoableOptimizationRun } from "@/lib/actions/schedule-optimization-actions";
 
 export default async function DashboardPage() {
   const session = await auth0.getSession();
@@ -19,7 +20,7 @@ export default async function DashboardPage() {
   const initialSelectedDayStr = cookieStore.get("chorez_selected_day")?.value;
   const initialSelectedRoom = cookieStore.get("chorez_selected_room")?.value ?? 'all';
 
-  const [dbUser, tasks, rooms, users, households, invitations, favoriteRoomIds, favoriteChoreIds] = await Promise.all([
+  const [dbUser, tasks, rooms, users, households, invitations, favoriteRoomIds, favoriteChoreIds, lastOptimizationRun] = await Promise.all([
     getDbUser(),
     getHouseholdTasks(),
     getRooms(),
@@ -28,6 +29,7 @@ export default async function DashboardPage() {
     getInvitations(),
     getFavoriteRoomIds(),
     getFavoriteChoreIds(),
+    getLatestUndoableOptimizationRun(),
   ]);
 
   return (
@@ -40,6 +42,7 @@ export default async function DashboardPage() {
       initialInvitations={invitations as Invitation[]}
       initialFavoriteRoomIds={favoriteRoomIds}
       initialFavoriteChoreIds={favoriteChoreIds}
+      initialLastOptimizationRun={lastOptimizationRun}
       initialViewMode={initialViewMode}
       initialWeekStart={initialWeekStartStr}
       initialSelectedDay={initialSelectedDayStr}

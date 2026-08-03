@@ -11,6 +11,8 @@ import {
   Loader2,
   Check,
   RefreshCw,
+  Sparkles,
+  Undo2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/app/dashboard/components/dashboard-ui-utils";
@@ -34,6 +36,11 @@ interface DashboardHeaderProps {
   openProfileSettings: () => void;
   openAddTask: () => void;
   openInviteMember: () => void;
+  isHouseholdAdmin: boolean;
+  isOptimizingSchedule: boolean;
+  hasUndoableOptimization: boolean;
+  onOptimizeSchedule: () => void;
+  onViewLastOptimization: () => void;
 }
 
 export default function DashboardHeader({
@@ -54,6 +61,11 @@ export default function DashboardHeader({
   openProfileSettings,
   openAddTask,
   openInviteMember,
+  isHouseholdAdmin,
+  isOptimizingSchedule,
+  hasUndoableOptimization,
+  onOptimizeSchedule,
+  onViewLastOptimization,
 }: Readonly<DashboardHeaderProps>) {
   return (
     <header className="px-6 pt-10 pb-6 bg-white/50 backdrop-blur-md sticky top-0 z-10 border-b border-indigo-50">
@@ -174,6 +186,38 @@ export default function DashboardHeader({
         <UserIcon size={16} className="text-indigo-400" />
         Invite Member
       </button>
+
+      {isHouseholdAdmin && (
+        <div className="flex items-center gap-2 mt-3">
+          <button
+            onClick={onOptimizeSchedule}
+            disabled={isOptimizingSchedule}
+            className="flex-1 flex items-center gap-2 text-sm font-bold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-2xl shadow-lg shadow-indigo-200 transition-all active:scale-[0.98] justify-center"
+          >
+            {isOptimizingSchedule ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Optimizing schedule&hellip;
+              </>
+            ) : (
+              <>
+                <Sparkles size={16} />
+                Optimize with AI
+              </>
+            )}
+          </button>
+          {hasUndoableOptimization && !isOptimizingSchedule && (
+            <button
+              onClick={onViewLastOptimization}
+              aria-label="View or undo last AI optimization"
+              title="View or undo last AI optimization"
+              className="p-2.5 rounded-2xl bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors shrink-0"
+            >
+              <Undo2 size={18} />
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex bg-indigo-50/50 p-1 rounded-2xl mt-4 relative">
         <motion.div

@@ -117,6 +117,7 @@ Apply ALL of the following rules, in priority order:
 2. Assign tasks based on room preferences: a user's "favoriteRooms" should be prioritised for that user over rooms they haven't favourited.
 3. Keep the assignments FAIR across users: do not let one user end up with only the least-liked/lowest-rated tasks just because they haven't rated them before, and try to balance total estimated workload (sum of estimatedDurationMinutes) evenly across users over the week.
 4. Balance the daily workload across the week: if a day has too many tasks/too much estimated duration, move some of its tasks to a lighter nearby day within the given week. If a day is empty or very light, pull some tasks forward from a heavier nearby day. Only move due dates within the provided week (between weekStart and weekEnd, inclusive).
+5. NEVER schedule the same chore twice on the same day. Before proposing a "reschedule" action, look through the whole "upcomingTasks" list for any OTHER task with the same "chore" name and make sure none of them already has (or will end up with, after your other actions) that exact "dueDate". If every day within the week already has a conflicting occurrence of that chore, leave that task's due date unchanged instead of creating a duplicate.
 
 This data is ONLY for this one household (id: ${payload.household.id}) — do not consider or reference any other household. Today is ${payload.household.today}. Only the upcoming week (${payload.household.weekStart} to ${payload.household.weekEnd}, inclusive) is in scope.
 
@@ -136,7 +137,9 @@ CRITICAL rules for "assignmentId" and "userId":
 - Never invent, guess, abbreviate or partially type an id. If you are not fully certain of an id, do not produce an action referencing it.
 - "userId" must be one of the ids listed under "users" (or null to unassign). "assignmentId" must be one of the ids listed under "upcomingTasks".
 
-Only include actions that actually change something (skip assignments that are already optimal). It is fine to return an empty actions array if the schedule is already optimal.`;
+Only include actions that actually change something (skip assignments that are already optimal). It is fine to return an empty actions array if the schedule is already optimal.
+
+Note: any "reschedule" action that would result in the same chore appearing twice on the same day is invalid and will be rejected and skipped when applied, so it is in your interest to avoid proposing one in the first place.`;
 }
 
 export async function getScheduleOptimizationActions(

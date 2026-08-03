@@ -29,6 +29,8 @@ import { useInviteMember } from "@/lib/dashboard/hooks/useInviteMember";
 import { useAddTaskForm } from "@/lib/dashboard/hooks/useAddTaskForm";
 import { useAddRoomForm } from "@/lib/dashboard/hooks/useAddRoomForm";
 import { usePushNotifications } from "@/lib/dashboard/hooks/usePushNotifications";
+import { useScheduleOptimization } from "@/lib/dashboard/hooks/useScheduleOptimization";
+import type { ScheduleOptimizationRun } from "@/lib/actions/schedule-optimization-actions";
 import { getGreeting, ICON_OPTIONS } from "@/app/dashboard/components/dashboard-ui-utils";
 import DashboardHeader from "@/app/dashboard/components/DashboardHeader";
 import WeekStrip from "@/app/dashboard/components/WeekStrip";
@@ -42,6 +44,7 @@ import AddTaskModal from "@/app/dashboard/components/modals/AddTaskModal";
 import AddRoomModal from "@/app/dashboard/components/modals/AddRoomModal";
 import ProfileModal from "@/app/dashboard/components/modals/ProfileModal";
 import InviteMemberModal from "@/app/dashboard/components/modals/InviteMemberModal";
+import AiOptimizationSummaryModal from "@/app/dashboard/components/modals/AiOptimizationSummaryModal";
 
 export type { DbUser, Household, HouseholdUser, Invitation, Room, Task } from "@/lib/dashboard/types";
 
@@ -62,6 +65,7 @@ interface DashboardClientProps {
   initialWeekStart?: string;
   initialSelectedDay?: string;
   initialSelectedRoom?: string;
+  initialLastOptimizationRun?: ScheduleOptimizationRun | null;
 }
 
 export default function DashboardClient({
@@ -77,6 +81,7 @@ export default function DashboardClient({
   initialWeekStart,
   initialSelectedDay,
   initialSelectedRoom,
+  initialLastOptimizationRun,
 }: Readonly<DashboardClientProps>) {
   const { user } = useUser();
   const router = useRouter();
@@ -229,6 +234,20 @@ export default function DashboardClient({
     handleEnableNotifications,
   } = usePushNotifications();
 
+  const {
+    isOptimizing,
+    optimizationError,
+    lastResult,
+    lastRun,
+    isSummaryOpen,
+    isUndoing,
+    runOptimization,
+    viewLastRun,
+    closeSummary,
+    undoLastRun,
+  } = useScheduleOptimization(initialLastOptimizationRun ?? null);
+  const isHouseholdAdmin = activeHousehold?.role === 'admin';
+
   // Refresh state and handler
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -240,6 +259,16 @@ export default function DashboardClient({
     } finally {
       setIsRefreshing(false);
     }
+  };
+
+  const handleOptimizeSchedule = async () => {
+    await runOptimization();
+    router.refresh();
+  };
+
+  const handleUndoOptimization = async () => {
+    await undoLastRun();
+    router.refresh();
   };
 
   // Derived state
@@ -656,6 +685,11 @@ export default function DashboardClient({
         openProfileSettings={openProfileSettings}
         openAddTask={openAddTask}
         openInviteMember={openInviteMember}
+        isHouseholdAdmin={isHouseholdAdmin}
+        isOptimizingSchedule={isOptimizing}
+        hasUndoableOptimization={!!lastRun}
+        onOptimizeSchedule={handleOptimizeSchedule}
+        onViewLastOptimization={viewLastRun}
       />
 
       {/* 2. WEEKLY CALENDAR SLIDER */}
@@ -847,6 +881,22 @@ export default function DashboardClient({
             isInviteValid={isInviteValid}
             onClose={() => setIsInviteOpen(false)}
             onSubmit={handleInviteSubmit}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* 10. AI SCHEDULE OPTIMIZATION SUMMARY MODAL (Drawer) */}
+      <AnimatePresence>
+        {isSummaryOpen && (
+          <AiOptimizationSummaryModal
+            appliedActions={lastResult ? lastResult.appliedActions : lastRun?.appliedActions ?? null}
+            tasksConsidered={lastResult ? lastResult.tasksConsidered : lastRun?.tasksConsidered ?? null}
+            error={optimizationError}
+            users={users}
+            canUndo={!!lastRun}
+            isUndoing={isUndoing}
+            onClose={closeSummary}
+            onUndo={handleUndoOptimization}
           />
         )}
       </AnimatePresence>
