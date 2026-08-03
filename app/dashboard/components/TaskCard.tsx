@@ -19,6 +19,7 @@ import { motion } from "framer-motion";
 import { cn } from "@/app/dashboard/components/dashboard-ui-utils";
 import { formatStopwatchTime } from "@/lib/dashboard/date-utils";
 import type { Task } from "@/lib/dashboard/types";
+import RelatedTasksStack from "@/app/dashboard/components/RelatedTasksStack";
 
 interface TaskCardProps {
   task: Task;
@@ -35,6 +36,9 @@ interface TaskCardProps {
   handleAssignToSelf: (assignmentId: string) => Promise<void>;
   isAssigningTask: string | null;
   handleFinishTask: (task: Task) => void;
+  relatedTasks?: Task[];
+  allTasks?: Task[];
+  onJumpToDay?: (date: Date) => void;
   ref?: Ref<HTMLDivElement>;
 }
 
@@ -53,6 +57,9 @@ function TaskCard({
   handleAssignToSelf,
   isAssigningTask,
   handleFinishTask,
+  relatedTasks = [],
+  allTasks = [],
+  onJumpToDay,
   ref,
 }: Readonly<TaskCardProps>) {
   const isCompleted = task.status === 'completed';
@@ -247,6 +254,10 @@ function TaskCard({
             </button>
           </div>
         </div>
+      )}
+
+      {!isCompleted && onJumpToDay && (
+        <RelatedTasksStack relatedTasks={relatedTasks} allTasks={allTasks} onJumpToDay={onJumpToDay} />
       )}
     </motion.div>
   );

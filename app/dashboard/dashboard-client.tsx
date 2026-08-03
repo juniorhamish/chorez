@@ -285,6 +285,16 @@ export default function DashboardClient({
     setSelectedDay(new Date());
   };
 
+  // Jumps the selected day/week to `date`, e.g. when previewing a suggested
+  // related task that's due on a different day.
+  const jumpToDay = (date: Date) => {
+    setSelectedDay(date);
+    const weekStart = getStartOfWeek(date);
+    if (!isSameDay(weekStart, currentWeekStart)) {
+      setCurrentWeekStart(weekStart);
+    }
+  };
+
   const weekRangeLabel = useMemo(() => {
     const weekEnd = new Date(currentWeekStart);
     weekEnd.setDate(currentWeekStart.getDate() + 6);
@@ -674,6 +684,7 @@ export default function DashboardClient({
       <TaskList
         viewMode={viewMode}
         filteredTasks={filteredTasks}
+        allTasks={tasks}
         selectedDay={selectedDay}
         isRefreshing={isRefreshing}
         handleRefresh={handleRefresh}
@@ -690,6 +701,7 @@ export default function DashboardClient({
         handleAssignToSelf={handleAssignToSelf}
         isAssigningTask={isAssigningTask}
         handleFinishTask={handleFinishTask}
+        onJumpToDay={jumpToDay}
       />
 
       {/* 5. COMPLETE TASK MODAL (Drawer) */}

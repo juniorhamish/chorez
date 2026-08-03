@@ -33,6 +33,7 @@ function baseProps(overrides: Partial<Parameters<typeof TaskList>[0]> = {}) {
   return {
     viewMode: 'mine' as const,
     filteredTasks: [],
+    allTasks: [],
     selectedDay: new Date("2024-06-10"),
     isRefreshing: false,
     handleRefresh: vi.fn().mockResolvedValue(undefined),
@@ -49,6 +50,7 @@ function baseProps(overrides: Partial<Parameters<typeof TaskList>[0]> = {}) {
     handleAssignToSelf: vi.fn().mockResolvedValue(undefined),
     isAssigningTask: null,
     handleFinishTask: vi.fn(),
+    onJumpToDay: vi.fn(),
     ...overrides,
   };
 }
@@ -97,5 +99,46 @@ describe("TaskList", () => {
     await user.click(starButton);
 
     expect(toggleFavoriteTask).toHaveBeenCalledWith("chore-42");
+  });
+
+  it("suggests other pending tasks in the same room due soon, as an optional stack", () => {
+    const task = makeTask({ id: "task-1", room_id: "room-1", due_date: "2024-06-10" });
+    const related = makeTask({
+      id: "task-2",
+      chore_id: "chore-2",
+      room_id: "room-1",
+      due_date: "2024-06-11",
+      title: "Dust shelves",
+    });
+
+    render(<TaskList {...baseProps({ filteredTasks: [task], allTasks: [task, related] })} />);
+
+    expect(screen.getByText(/1 more task needed soon in this room/i)).toBeInTheDocument();
+    expect(screen.getByText(/Suggested/i)).toBeInTheDocument();
+  });
+
+  it("does not suggest the same recurring chore more than once across the list", () => {
+    const mondayTask = makeTask({ id: "task-mon", chore_id: "chore-mon", room_id: "room-1", due_date: "2024-06-10" });
+    const tuesdayTask = makeTask({ id: "task-tue", chore_id: "chore-tue", room_id: "room-1", due_date: "2024-06-10" });
+    const dailySuggestion = makeTask({
+      id: "task-daily",
+      chore_id: "chore-daily",
+      room_id: "room-1",
+      due_date: "2024-06-11",
+      title: "Wipe counters",
+    });
+
+    render(
+      <TaskList
+        {...baseProps({
+          filteredTasks: [mondayTask, tuesdayTask],
+          allTasks: [mondayTask, tuesdayTask, dailySuggestion],
+        })}
+      />
+    );
+
+    // Only one of the two same-room cards should end up offering the
+    // suggestion, not both.
+    expect(screen.getAllByText(/more task needed soon in this room/i)).toHaveLength(1);
   });
 });

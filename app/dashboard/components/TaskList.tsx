@@ -1,15 +1,18 @@
 "use client";
 
+import { useMemo } from "react";
 import { Search, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/app/dashboard/components/dashboard-ui-utils";
 import { getDayLabel } from "@/lib/dashboard/date-utils";
+import { getRelatedUpcomingTasks } from "@/lib/dashboard/related-tasks";
 import type { Task } from "@/lib/dashboard/types";
 import TaskCard from "@/app/dashboard/components/TaskCard";
 
 interface TaskListProps {
   viewMode: 'mine' | 'household';
   filteredTasks: Task[];
+  allTasks: Task[];
   selectedDay: Date;
   isRefreshing: boolean;
   handleRefresh: () => Promise<void>;
@@ -26,11 +29,13 @@ interface TaskListProps {
   handleAssignToSelf: (assignmentId: string) => Promise<void>;
   isAssigningTask: string | null;
   handleFinishTask: (task: Task) => void;
+  onJumpToDay: (date: Date) => void;
 }
 
 export default function TaskList({
   viewMode,
   filteredTasks,
+  allTasks,
   selectedDay,
   isRefreshing,
   handleRefresh,
@@ -47,7 +52,29 @@ export default function TaskList({
   handleAssignToSelf,
   isAssigningTask,
   handleFinishTask,
+  onJumpToDay,
 }: Readonly<TaskListProps>) {
+  // For each visible task, find other pending tasks in the same room due
+  // over the next few days, so they can be suggested as optional add-ons.
+  // A chore is only ever suggested once across the whole list (tracked via
+  // `shownChoreIds`), so e.g. a daily task isn't offered under every card.
+  const relatedTasksByTaskId = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    const shownChoreIds = new Set<string>();
+
+    for (const task of filteredTasks) {
+      if (task.status === 'completed') continue;
+
+      const related = getRelatedUpcomingTasks(task, allTasks, { excludeChoreIds: shownChoreIds });
+      if (related.length > 0) {
+        map.set(task.id, related);
+        related.forEach((r) => shownChoreIds.add(r.chore_id));
+      }
+    }
+
+    return map;
+  }, [filteredTasks, allTasks]);
+
   return (
     <section className="mt-6 px-6 space-y-4">
       <div className="flex justify-between items-center mb-4">
@@ -90,6 +117,9 @@ export default function TaskList({
               handleAssignToSelf={handleAssignToSelf}
               isAssigningTask={isAssigningTask}
               handleFinishTask={handleFinishTask}
+              relatedTasks={relatedTasksByTaskId.get(task.id) ?? []}
+              allTasks={allTasks}
+              onJumpToDay={onJumpToDay}
             />
           ))
         ) : (
