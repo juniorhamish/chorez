@@ -13,7 +13,12 @@ import {
   Armchair,
 } from "lucide-react";
 import AuthLink from "./components/AuthLink";
-import { motion } from "framer-motion";
+import {
+  MotionDiv,
+  MotionH1,
+  MotionH2,
+  MotionP,
+} from "./components/MotionPrimitives";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -132,12 +137,12 @@ function Hero() {
       <div className="absolute top-40 -left-24 w-72 h-72 bg-[#88A47C]/20 rounded-full blur-3xl" />
 
       <div className="relative max-w-6xl mx-auto px-6 pt-16 pb-20 md:pt-24 md:pb-28 grid md:grid-cols-2 gap-12 items-center">
-        <motion.div
+        <MotionDiv
           initial="hidden"
           animate="show"
           variants={stagger}
         >
-          <motion.div
+          <MotionDiv
             variants={fadeUp}
             className="inline-flex items-center gap-2 bg-white border border-indigo-100 px-4 py-1.5 rounded-full shadow-sm mb-6"
           >
@@ -145,9 +150,9 @@ function Hero() {
             <span className="text-xs font-black uppercase tracking-widest text-indigo-500">
               Built for households
             </span>
-          </motion.div>
+          </MotionDiv>
 
-          <motion.h1
+          <MotionH1
             variants={fadeUp}
             className="text-4xl md:text-6xl font-black tracking-tight leading-[1.05] mb-6"
           >
@@ -156,18 +161,18 @@ function Hero() {
               <span className="relative z-10">done.</span>
               <span className="absolute left-0 bottom-1 md:bottom-2 h-3 md:h-4 w-full bg-amber-200/70 -rotate-1 rounded-sm z-0" />
             </span>
-          </motion.h1>
+          </MotionH1>
 
-          <motion.p
+          <MotionP
             variants={fadeUp}
             className="text-indigo-600/70 text-lg font-medium max-w-md mb-8"
           >
             Chorez helps your household track tasks by room, split the load
             fairly, and celebrate the wins &mdash; so nothing falls through
             the cracks again.
-          </motion.p>
+          </MotionP>
 
-          <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-4">
+          <MotionDiv variants={fadeUp} className="flex flex-wrap items-center gap-4">
             <Link
               href="/dashboard"
               className="group bg-indigo-600 hover:bg-indigo-700 text-white font-black px-7 py-4 rounded-2xl shadow-xl shadow-indigo-200 transition-all active:scale-95 flex items-center gap-2"
@@ -179,9 +184,9 @@ function Hero() {
               />
             </Link>
             <AuthLink className="font-bold text-indigo-600 px-7 py-4 rounded-2xl border border-indigo-100 bg-white hover:border-indigo-200 transition-colors flex items-center gap-2" />
-          </motion.div>
+          </MotionDiv>
 
-          <motion.div
+          <MotionDiv
             variants={fadeUp}
             className="flex items-center gap-3 mt-10"
           >
@@ -205,11 +210,11 @@ function Hero() {
             <p className="text-sm font-bold text-indigo-400">
               Loved by families keeping their homes in sync
             </p>
-          </motion.div>
-        </motion.div>
+          </MotionDiv>
+        </MotionDiv>
 
         {/* Preview card */}
-        <motion.div
+        <MotionDiv
           initial={{ opacity: 0, y: 30, rotate: -2 }}
           animate={{ opacity: 1, y: 0, rotate: -2 }}
           transition={{ duration: 0.6, delay: 0.2 }}
@@ -241,7 +246,7 @@ function Hero() {
             </button>
           </div>
 
-          <motion.div
+          <MotionDiv
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, delay: 0.6 }}
@@ -258,8 +263,8 @@ function Hero() {
                 Water the plants
               </p>
             </div>
-          </motion.div>
-        </motion.div>
+          </MotionDiv>
+        </MotionDiv>
       </div>
     </section>
   );
@@ -289,7 +294,7 @@ function RoomStrip() {
 function Features() {
   return (
     <section className="max-w-6xl mx-auto px-6 py-20 md:py-28">
-      <motion.div
+      <MotionDiv
         initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true, margin: "-80px" }}
@@ -306,9 +311,9 @@ function Features() {
           From the kitchen sink to the bathroom floor, Chorez keeps every
           chore visible, assigned, and accounted for.
         </p>
-      </motion.div>
+      </MotionDiv>
 
-      <motion.div
+      <MotionDiv
         initial="hidden"
         whileInView="show"
         viewport={{ once: true, margin: "-80px" }}
@@ -319,7 +324,7 @@ function Features() {
           const Icon = feature.icon;
           const accent = ACCENT_STYLES[feature.accent];
           return (
-            <motion.div
+            <MotionDiv
               key={feature.title}
               variants={fadeUp}
               whileHover={{ y: -4 }}
@@ -340,10 +345,10 @@ function Features() {
               <p className="text-indigo-600/70 font-medium text-sm leading-relaxed">
                 {feature.description}
               </p>
-            </motion.div>
+            </MotionDiv>
           );
         })}
-      </motion.div>
+      </MotionDiv>
     </section>
   );
 }
@@ -370,7 +375,7 @@ function HowItWorks() {
   return (
     <section className="bg-white border-y border-indigo-50">
       <div className="max-w-6xl mx-auto px-6 py-20 md:py-28">
-        <motion.h2
+        <MotionH2
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
@@ -378,9 +383,9 @@ function HowItWorks() {
           className="text-3xl md:text-4xl font-black tracking-tight text-center mb-14"
         >
           Up and running in three steps
-        </motion.h2>
+        </MotionH2>
 
-        <motion.div
+        <MotionDiv
           initial="hidden"
           whileInView="show"
           viewport={{ once: true, margin: "-80px" }}
@@ -388,7 +393,7 @@ function HowItWorks() {
           className="grid md:grid-cols-3 gap-8"
         >
           {steps.map((step) => (
-            <motion.div key={step.number} variants={fadeUp} className="relative">
+            <MotionDiv key={step.number} variants={fadeUp} className="relative">
               <span className="text-5xl font-black text-indigo-100">
                 {step.number}
               </span>
@@ -396,9 +401,9 @@ function HowItWorks() {
               <p className="text-indigo-600/70 font-medium text-sm leading-relaxed">
                 {step.description}
               </p>
-            </motion.div>
+            </MotionDiv>
           ))}
-        </motion.div>
+        </MotionDiv>
       </div>
     </section>
   );
@@ -407,7 +412,7 @@ function HowItWorks() {
 function CtaBanner() {
   return (
     <section className="max-w-6xl mx-auto px-6 py-20 md:py-28">
-      <motion.div
+      <MotionDiv
         initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true, margin: "-80px" }}
@@ -433,7 +438,7 @@ function CtaBanner() {
             <ArrowRight size={18} />
           </Link>
         </div>
-      </motion.div>
+      </MotionDiv>
     </section>
   );
 }
