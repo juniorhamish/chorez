@@ -40,6 +40,8 @@ import {
   BellOff,
   RefreshCw,
   Repeat,
+  Timer,
+  Square,
   type LucideIcon
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -104,6 +106,21 @@ const FREQUENCY_OPTIONS: { value: ChoreFrequency; label: string }[] = [
 ];
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => hour);
+
+/** localStorage key used to persist the running stopwatch across reloads (e.g. after the device locks). */
+const STOPWATCH_STORAGE_KEY = "chorez_stopwatch";
+/** Caps how long a single stopwatch run can count, so a forgotten timer never pre-fills a huge duration. */
+const MAX_STOPWATCH_MINUTES = 180;
+
+/** Formats a millisecond duration as `mm:ss`, or `h:mm:ss` once it runs past an hour. */
+function formatStopwatchTime(ms: number) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
+}
 
 /** Formats a 24-hour value (0-23) as a friendly 12-hour clock label, e.g. 8 -> "8:00 AM". */
 function formatHourLabel(hour: number) {
@@ -301,6 +318,13 @@ export default function DashboardClient({
   const [actualMinutes, setActualMinutes] = useState("");
   const [completionNotes, setCompletionNotes] = useState("");
   const [isCompletingTask, setIsCompletingTask] = useState(false);
+  const [wasStopwatchCapped, setWasStopwatchCapped] = useState(false);
+
+  // Stopwatch: persisted as a wall-clock start time (not a running counter) so
+  // the elapsed time stays correct even if the device is locked or the app
+  // is fully reloaded while timing a task.
+  const [stopwatch, setStopwatch] = useState<{ taskId: string; startedAt: number } | null>(null);
+  const [stopwatchNow, setStopwatchNow] = useState(() => Date.now());
   const [isAssigningTask, setIsAssigningTask] = useState<string | null>(null);
   const [deletingChore, setDeletingChore] = useState<Task | null>(null);
   const [isDeletingChore, setIsDeletingChore] = useState(false);
@@ -332,6 +356,48 @@ export default function DashboardClient({
       document.cookie = `chorez_selected_room=${selectedRoom}; path=/; max-age=31536000`;
     } catch {}
   }, [viewMode, currentWeekStart, selectedDay, selectedRoom]);
+
+  // Restore a running stopwatch (if any) after a reload — this is what lets timing
+  // survive the device being locked and the app/tab being reopened later.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STOPWATCH_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.taskId === "string" && typeof parsed.startedAt === "number") {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setStopwatch(parsed);
+        }
+      }
+    } catch {
+      // ignore corrupt/unavailable storage
+    }
+  }, []);
+
+  // Keep the displayed elapsed time in sync with the wall clock while a stopwatch is
+  // running. Recomputing from `startedAt` (rather than counting ticks) means the value
+  // is still correct even after the tab was frozen/backgrounded for a while.
+  useEffect(() => {
+    if (!stopwatch) return;
+    const sync = () => setStopwatchNow(Date.now());
+    sync();
+    const interval = setInterval(sync, 1000);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") sync();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", sync);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", sync);
+    };
+  }, [stopwatch]);
+
+  const stopwatchElapsedMs = stopwatch ? Math.max(0, stopwatchNow - stopwatch.startedAt) : 0;
+  const stopwatchCapMs = MAX_STOPWATCH_MINUTES * 60 * 1000;
+  const stopwatchDisplayMs = Math.min(stopwatchElapsedMs, stopwatchCapMs);
+  const isStopwatchCapped = stopwatchElapsedMs >= stopwatchCapMs;
 
   // Household switcher state
   const [isHouseholdMenuOpen, setIsHouseholdMenuOpen] = useState(false);
@@ -672,11 +738,54 @@ export default function DashboardClient({
     }
   };
 
-  const openCompleteTask = (task: Task) => {
+  const openCompleteTask = (task: Task, prefillMinutes?: number, capped: boolean = false) => {
     setRating(0);
-    setActualMinutes("");
+    setActualMinutes(prefillMinutes != null ? String(prefillMinutes) : "");
     setCompletionNotes("");
+    setWasStopwatchCapped(capped);
     setCompletingTask(task);
+  };
+
+  const clearStopwatch = useCallback(() => {
+    setStopwatch(null);
+    try {
+      localStorage.removeItem(STOPWATCH_STORAGE_KEY);
+    } catch {
+      // ignore unavailable storage
+    }
+  }, []);
+
+  const handleStartStopwatch = (task: Task) => {
+    const next = { taskId: task.id, startedAt: Date.now() };
+    setStopwatch(next);
+    setStopwatchNow(next.startedAt);
+    try {
+      localStorage.setItem(STOPWATCH_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore unavailable storage
+    }
+  };
+
+  // Stops the running stopwatch for `task` and opens the completion dialog
+  // pre-filled with the elapsed time (capped at MAX_STOPWATCH_MINUTES).
+  const handleStopStopwatch = (task: Task) => {
+    if (!stopwatch || stopwatch.taskId !== task.id) return;
+    const rawElapsedMs = Date.now() - stopwatch.startedAt;
+    const cappedMs = Math.min(rawElapsedMs, MAX_STOPWATCH_MINUTES * 60 * 1000);
+    const minutes = Math.max(1, Math.round(cappedMs / 60000));
+    const capped = rawElapsedMs > MAX_STOPWATCH_MINUTES * 60 * 1000;
+    clearStopwatch();
+    openCompleteTask(task, minutes, capped);
+  };
+
+  // Used by the "Done" button: if a stopwatch happens to be running for this
+  // task, stop it and pre-fill the dialog instead of opening it empty.
+  const handleFinishTask = (task: Task) => {
+    if (stopwatch && stopwatch.taskId === task.id) {
+      handleStopStopwatch(task);
+    } else {
+      openCompleteTask(task);
+    }
   };
 
   const handleSubmitCompletion = async () => {
@@ -1232,39 +1341,73 @@ export default function DashboardClient({
                     </div>
                   )}
 
-                  {!isCompleted && (
-                    <div className="flex items-center justify-between mt-6">
-                      <div className="flex items-center gap-4 text-indigo-400">
-                        <div className="flex items-center gap-1.5 text-xs font-bold">
-                          <Clock size={14} />
-                          {durationLabel}
+                  {!isCompleted && (() => {
+                    const isTimingThisTask = stopwatch?.taskId === task.id;
+                    const isTimingOtherTask = !!stopwatch && !isTimingThisTask;
+                    return (
+                      <div className="flex items-center justify-between mt-6">
+                        <div className="flex items-center gap-4 text-indigo-400">
+                          <div className="flex items-center gap-1.5 text-xs font-bold">
+                            <Clock size={14} />
+                            {durationLabel}
+                          </div>
+                          {isTimingThisTask && (
+                            <div className={cn(
+                              "flex items-center gap-1.5 text-xs font-black tabular-nums",
+                              isStopwatchCapped ? "text-rose-500" : "text-emerald-600"
+                            )}>
+                              <Timer size={14} className={cn(!isStopwatchCapped && "animate-pulse")} />
+                              {formatStopwatchTime(stopwatchDisplayMs)}
+                              {isStopwatchCapped && <span className="uppercase tracking-wide">Maxed</span>}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          {!task.assigned_user_id && (
+                            <button 
+                              onClick={() => handleAssignToSelf(task.id)}
+                              disabled={isAssigningTask === task.id}
+                              className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-4 py-2.5 rounded-2xl font-bold text-sm transition-all active:scale-95 flex items-center gap-2 disabled:opacity-50"
+                            >
+                              {isAssigningTask === task.id ? (
+                                <Loader2 size={16} className="animate-spin" />
+                              ) : (
+                                <UserIcon size={16} />
+                              )}
+                              Assign to Me
+                            </button>
+                          )}
+                          {isTimingThisTask ? (
+                            <button
+                              onClick={() => handleStopStopwatch(task)}
+                              aria-label="Stop stopwatch"
+                              title="Stop timer"
+                              className="bg-amber-100 hover:bg-amber-200 text-amber-700 p-2.5 rounded-2xl transition-all active:scale-95"
+                            >
+                              <Square size={16} />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleStartStopwatch(task)}
+                              disabled={isTimingOtherTask}
+                              aria-label="Start stopwatch"
+                              title={isTimingOtherTask ? "Stop the other running timer first" : "Time this task"}
+                              className="bg-indigo-100 hover:bg-indigo-200 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-700 p-2.5 rounded-2xl transition-all active:scale-95"
+                            >
+                              <Timer size={16} />
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => handleFinishTask(task)}
+                            className="bg-[#88A47C] hover:bg-[#748D69] text-white px-6 py-2.5 rounded-2xl font-bold text-sm shadow-lg shadow-green-100 transition-all active:scale-95 flex items-center gap-2"
+                          >
+                            <CheckCircle2 size={16} />
+                            Done
+                          </button>
                         </div>
                       </div>
-                      <div className="flex gap-2">
-                        {!task.assigned_user_id && (
-                          <button 
-                            onClick={() => handleAssignToSelf(task.id)}
-                            disabled={isAssigningTask === task.id}
-                            className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-4 py-2.5 rounded-2xl font-bold text-sm transition-all active:scale-95 flex items-center gap-2 disabled:opacity-50"
-                          >
-                            {isAssigningTask === task.id ? (
-                              <Loader2 size={16} className="animate-spin" />
-                            ) : (
-                              <UserIcon size={16} />
-                            )}
-                            Assign to Me
-                          </button>
-                        )}
-                        <button 
-                          onClick={() => openCompleteTask(task)}
-                          className="bg-[#88A47C] hover:bg-[#748D69] text-white px-6 py-2.5 rounded-2xl font-bold text-sm shadow-lg shadow-green-100 transition-all active:scale-95 flex items-center gap-2"
-                        >
-                          <CheckCircle2 size={16} />
-                          Done
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </motion.div>
               );
             })
@@ -1337,6 +1480,11 @@ export default function DashboardClient({
                     />
                     <div className="absolute right-5 top-1/2 -translate-y-1/2 text-indigo-400 font-bold">min</div>
                   </div>
+                  {wasStopwatchCapped && (
+                    <p className="text-xs font-bold text-amber-500 mt-2 ml-1">
+                      The timer ran past {MAX_STOPWATCH_MINUTES} min, so we capped the pre-filled time — feel free to adjust it.
+                    </p>
+                  )}
                 </div>
 
                 {/* Rating */}
