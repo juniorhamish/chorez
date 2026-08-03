@@ -36,8 +36,39 @@ async function handleReschedule(req: Request) {
         }).format(now);
       }
 
-      // Look at all tasks in the past for this household that are incomplete,
-      // and reschedule all of those tasks to the current day.
+      // Some overdue assignments can't simply move to today because a
+      // (chore_id, due_date) unique constraint would then have two rows for
+      // the same chore on today's date - either because a fresh instance
+      // was already created for today, or because more than one overdue
+      // instance of the same chore is pending. Rank the candidates per
+      // chore (preferring a row that's already due today, otherwise the
+      // most recently completed/created one) and drop the rest so the
+      // reschedule below never collides with the unique constraint.
+      await sql`
+        WITH ranked AS (
+          SELECT
+            id,
+            ROW_NUMBER() OVER (
+              PARTITION BY chore_id
+              ORDER BY
+                (due_date = ${currentDateStr}::date) DESC,
+                (status = 'completed') DESC,
+                due_date DESC
+            ) AS row_number
+          FROM chore_assignments
+          WHERE household_id = ${household.id}
+            AND due_date <= ${currentDateStr}::date
+            AND (due_date = ${currentDateStr}::date OR status != 'completed')
+        )
+        DELETE FROM chore_assignments
+        WHERE household_id = ${household.id}
+          AND due_date < ${currentDateStr}::date
+          AND status != 'completed'
+          AND id IN (SELECT id FROM ranked WHERE row_number > 1)
+      `;
+
+      // Look at all remaining tasks in the past for this household that are
+      // incomplete, and reschedule all of those tasks to the current day.
       const updatedAssignments = await sql`
         UPDATE chore_assignments
         SET due_date = ${currentDateStr}::date
