@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addDaysToDateStr,
   calculateNextDueDate,
+  clampDueDateToToday,
   formatDateInTz,
   getMissingRecurringDates,
   isMoreFrequentThanWeekly,
@@ -75,6 +76,23 @@ describe("calculateNextDueDate", () => {
 
     const endOfYear = new Date("2024-12-31T00:00:00.000Z");
     expect(toDateStr(calculateNextDueDate(endOfYear, "weekly", null))).toBe("2025-01-07");
+  });
+});
+
+describe("clampDueDateToToday", () => {
+  it("leaves a due date that is today or in the future untouched", () => {
+    expect(clampDueDateToToday("2024-06-15", "2024-06-15")).toBe("2024-06-15");
+    expect(clampDueDateToToday("2024-06-20", "2024-06-15")).toBe("2024-06-20");
+  });
+
+  it("clamps a due date that is in the past up to today", () => {
+    expect(clampDueDateToToday("2024-01-01", "2024-06-15")).toBe("2024-06-15");
+    expect(clampDueDateToToday(new Date("2024-01-01T00:00:00.000Z"), "2024-06-15")).toBe("2024-06-15");
+  });
+
+  it("defaults todayStr to the current date when not provided", () => {
+    const pastDate = new Date("2000-01-01T00:00:00.000Z");
+    expect(clampDueDateToToday(pastDate)).toBe(toDateStr(new Date()));
   });
 });
 

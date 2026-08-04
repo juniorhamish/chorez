@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getDbUser } from "./user-actions";
 import {
   calculateNextDueDate,
+  clampDueDateToToday,
   isMoreFrequentThanWeekly,
   ensureUpcomingInstances,
 } from "@/lib/scheduling";
@@ -186,10 +187,13 @@ export async function addChore(data: {
   if (isMoreFrequentThanWeekly(frequency, frequency_interval)) {
     await ensureUpcomingInstances(choreId, dbUser.active_household_id, frequency, frequency_interval, lastDate);
   } else {
+    // If the last-completed date is old enough that the computed next due
+    // date would still be in the past, clamp it to today instead.
     const dueDate = calculateNextDueDate(lastDate, frequency, frequency_interval);
+    const dueDateStr = clampDueDateToToday(dueDate);
     await sql`
       INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
-      VALUES (${choreId}, ${dbUser.active_household_id}, ${dueDate.toISOString().split('T')[0]}, 'pending')
+      VALUES (${choreId}, ${dbUser.active_household_id}, ${dueDateStr}, 'pending')
       ON CONFLICT (chore_id, due_date) DO NOTHING
     `;
   }

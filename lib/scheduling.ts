@@ -54,6 +54,17 @@ export function toDateStr(value: Date | string): string {
   return String(value).split('T')[0];
 }
 
+/**
+ * Clamps a due date so it's never earlier than today. Used after
+ * `calculateNextDueDate` when the anchor date (e.g. a last-completed date
+ * entered when creating a task) is old enough that the computed next due
+ * date would otherwise still land in the past.
+ */
+export function clampDueDateToToday(dueDate: Date | string, todayStr: string = toDateStr(new Date())): string {
+  const dueDateStr = toDateStr(dueDate);
+  return dueDateStr < todayStr ? todayStr : dueDateStr;
+}
+
 /** Adds a number of whole days to a "YYYY-MM-DD" string, returning a "YYYY-MM-DD" string. */
 export function addDaysToDateStr(dateStr: string, days: number): string {
   const [year, month, day] = dateStr.split('-').map(Number);

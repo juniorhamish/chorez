@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sqlMock = vi.fn();
 vi.mock("@/lib/db", () => ({ sql: sqlMock }));
@@ -89,6 +89,40 @@ describe("addChore frequency-interval resolution", () => {
     await expect(addChore({ ...baseData, frequency: "weekly" })).rejects.toThrow(
       "User or active household not found"
     );
+  });
+});
+
+describe("addChore due-date clamping", () => {
+  const baseData = {
+    title: "Vacuum",
+    room_id: "room-1",
+    estimated_duration_minutes: 15,
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-06-15T12:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("clamps the due date to today when the computed next due date would still be in the past", async () => {
+    sqlMock.mockResolvedValueOnce([{ id: "chore-1" }]); // INSERT INTO chores ... RETURNING id
+    // last_completed_date is far enough in the past that last + 1 week is
+    // still before today (2024-06-15).
+    await addChore({ ...baseData, frequency: "weekly", last_completed_date: "2024-01-01" });
+
+    // VALUES (chore_id, household_id, due_date, status)
+    expect(sqlMock.mock.calls[1][3]).toBe("2024-06-15");
+  });
+
+  it("keeps the computed next due date when it is today or in the future", async () => {
+    sqlMock.mockResolvedValueOnce([{ id: "chore-1" }]);
+    await addChore({ ...baseData, frequency: "weekly", last_completed_date: "2024-06-14" });
+
+    expect(sqlMock.mock.calls[1][3]).toBe("2024-06-21");
   });
 });
 
