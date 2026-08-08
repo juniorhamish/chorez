@@ -136,7 +136,8 @@ export async function ensureUpcomingInstances(
   householdId: string,
   frequency: ChoreFrequency,
   frequencyInterval: number | null | undefined,
-  fallbackAnchorDate: Date
+  fallbackAnchorDate: Date,
+  assignedUserId?: string | null
 ): Promise<string[]> {
   if (!isMoreFrequentThanWeekly(frequency, frequencyInterval)) return [];
 
@@ -161,9 +162,12 @@ export async function ensureUpcomingInstances(
 
   const created: string[] = [];
   for (const dateStr of datesToInsert) {
+    // Private tasks are always pinned to their owner, so every newly
+    // created occurrence must keep that same assignee rather than starting
+    // out unassigned.
     const inserted = await sql`
-      INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
-      VALUES (${choreId}, ${householdId}, ${dateStr}::date, 'pending')
+      INSERT INTO chore_assignments (chore_id, household_id, due_date, status, assigned_user_id)
+      VALUES (${choreId}, ${householdId}, ${dateStr}::date, 'pending', ${assignedUserId ?? null})
       ON CONFLICT (chore_id, due_date) DO NOTHING
       RETURNING id
     `;
@@ -183,7 +187,7 @@ export async function ensureUpcomingInstances(
  */
 export async function ensureUpcomingInstancesForHousehold(householdId: string): Promise<number> {
   const chores = await sql`
-    SELECT id, frequency, frequency_interval
+    SELECT id, frequency, frequency_interval, private_to_user_id
     FROM chores
     WHERE household_id = ${householdId} AND frequency IN ('daily', 'every-x-days')
   `;
@@ -199,7 +203,8 @@ export async function ensureUpcomingInstancesForHousehold(householdId: string): 
       householdId,
       frequency,
       frequencyInterval,
-      new Date()
+      new Date(),
+      chore.private_to_user_id as string | null
     );
     totalCreated += created.length;
   }

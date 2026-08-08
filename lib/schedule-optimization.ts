@@ -96,7 +96,10 @@ export async function optimizeHousehold(
   }
   const validUserIds = new Set(users.map((u) => u.id as string));
 
-  // 2. Upcoming week's pending tasks for this household.
+  // 2. Upcoming week's pending tasks for this household. Private tasks
+  // (chores.private_to_user_id set) are excluded entirely: they belong to a
+  // single user, are never visible to the rest of the household, and must
+  // never be reassigned or rescheduled by the optimiser.
   const upcomingTasks = await sql`
     SELECT
       ca.id,
@@ -113,6 +116,7 @@ export async function optimizeHousehold(
       AND ca.status = 'pending'
       AND ca.due_date >= ${weekStart}::date
       AND ca.due_date <= ${weekEnd}::date
+      AND c.private_to_user_id IS NULL
     ORDER BY ca.due_date ASC
   `;
 

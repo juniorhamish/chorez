@@ -14,6 +14,7 @@ import {
   Timer,
   Square,
   DoorOpen,
+  Lock,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/app/dashboard/components/dashboard-ui-utils";
@@ -95,6 +96,15 @@ function TaskCard({
             <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded-md">
               {task.room_name ?? "No Room"}
             </span>
+            {task.is_private && (
+              <span
+                title="Just for me — nobody else in the household can see this task"
+                className="text-[10px] font-black uppercase tracking-widest text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-md flex items-center gap-1"
+              >
+                <Lock size={10} />
+                Just for me
+              </span>
+            )}
             {!isCompleted && (
               <button onClick={() => toggleFavoriteTask(task.chore_id)}>
                 <Star 

@@ -209,6 +209,8 @@ export default function DashboardClient({
     setNewTaskFrequency,
     newTaskFrequencyInterval,
     setNewTaskFrequencyInterval,
+    newTaskIsPrivate,
+    setNewTaskIsPrivate,
     isAddingTask,
     setIsAddingTask,
     openAddTask,
@@ -452,6 +454,7 @@ export default function DashboardClient({
         last_completed_date: newTaskLastCompleted,
         frequency: newTaskFrequency,
         frequency_interval: isCustomIntervalFrequency ? Number(newTaskFrequencyInterval) : undefined,
+        is_private: newTaskIsPrivate,
       });
       setIsAddTaskOpen(false);
       router.refresh();
@@ -821,6 +824,8 @@ export default function DashboardClient({
             setNewTaskFrequencyInterval={setNewTaskFrequencyInterval}
             newTaskLastCompleted={newTaskLastCompleted}
             setNewTaskLastCompleted={setNewTaskLastCompleted}
+            newTaskIsPrivate={newTaskIsPrivate}
+            setNewTaskIsPrivate={setNewTaskIsPrivate}
             isCustomIntervalFrequency={isCustomIntervalFrequency}
             isAddTaskValid={isAddTaskValid}
             isAddingTask={isAddingTask}

@@ -33,7 +33,9 @@ export async function getHouseholdTasks() {
   const dbUser = await getDbUser();
   if (!dbUser?.active_household_id) return [];
 
-  // Fetch chore assignments with chore and room details
+  // Fetch chore assignments with chore and room details. Tasks whose chore
+  // is private to another user are excluded entirely — private tasks are
+  // only ever visible to the household member they were created for.
   const tasks = await sql`
     SELECT 
       ca.id,
@@ -49,6 +51,7 @@ export async function getHouseholdTasks() {
       c.estimated_duration_minutes,
       c.frequency,
       c.frequency_interval,
+      c.private_to_user_id,
       r.name as room_name,
       r.id as room_id,
       u.full_name as assigned_user_name,
@@ -60,11 +63,13 @@ export async function getHouseholdTasks() {
     LEFT JOIN rooms r ON c.room_id = r.id
     LEFT JOIN users u ON ca.assigned_user_id = u.id
     WHERE ca.household_id = ${dbUser.active_household_id}
+      AND (c.private_to_user_id IS NULL OR c.private_to_user_id = ${dbUser.id})
     ORDER BY ca.due_date
   `;
 
   return tasks.map((task) => ({
     ...task,
+    is_private: task.private_to_user_id != null,
     assigned_user_avatar_url: getGravatarUrl(task.assigned_user_email as string | null),
   }));
 }
@@ -161,6 +166,7 @@ export async function addChore(data: {
   last_completed_date: string;
   frequency: ChoreFrequency;
   frequency_interval?: number | null;
+  is_private?: boolean;
 }) {
   const dbUser = await getDbUser();
   if (!dbUser?.active_household_id) throw new Error("User or active household not found");
@@ -168,32 +174,38 @@ export async function addChore(data: {
   const { title, room_id, estimated_duration_minutes, last_completed_date, frequency } = data;
   const frequency_interval =
     frequency === 'every-x-days' || frequency === 'every-x-weeks' ? data.frequency_interval ?? 1 : null;
+  // A private task is for its creator only: it's never visible to other
+  // household members, and it can never be (re)assigned to anyone else —
+  // including by the AI schedule optimizer, which excludes private chores
+  // from consideration entirely.
+  const private_to_user_id = data.is_private ? dbUser.id : null;
 
   // 1. Create the chore template
   const newChore = await sql`
-    INSERT INTO chores (household_id, room_id, title, estimated_duration_minutes, frequency, frequency_interval)
-    VALUES (${dbUser.active_household_id}, ${room_id}, ${title}, ${estimated_duration_minutes}, ${frequency}, ${frequency_interval})
+    INSERT INTO chores (household_id, room_id, title, estimated_duration_minutes, frequency, frequency_interval, private_to_user_id)
+    VALUES (${dbUser.active_household_id}, ${room_id}, ${title}, ${estimated_duration_minutes}, ${frequency}, ${frequency_interval}, ${private_to_user_id})
     RETURNING id
   `;
 
   const choreId = newChore[0].id;
 
-  // 2. Create the initial pending assignment(s) (unassigned for now, or
-  // assigned to creator?). Chores that recur more frequently than weekly
-  // (e.g. daily) get one instance per occurrence across the rolling
-  // schedule horizon, instead of a single "next" instance, so a different
-  // person can be assigned each time it comes up.
+  // 2. Create the initial pending assignment(s) (unassigned for now, unless
+  // this is a private task, in which case it's always assigned to its
+  // owner). Chores that recur more frequently than weekly (e.g. daily) get
+  // one instance per occurrence across the rolling schedule horizon,
+  // instead of a single "next" instance, so a different person can be
+  // assigned each time it comes up.
   const lastDate = new Date(last_completed_date);
   if (isMoreFrequentThanWeekly(frequency, frequency_interval)) {
-    await ensureUpcomingInstances(choreId, dbUser.active_household_id, frequency, frequency_interval, lastDate);
+    await ensureUpcomingInstances(choreId, dbUser.active_household_id, frequency, frequency_interval, lastDate, private_to_user_id);
   } else {
     // If the last-completed date is old enough that the computed next due
     // date would still be in the past, clamp it to today instead.
     const dueDate = calculateNextDueDate(lastDate, frequency, frequency_interval);
     const dueDateStr = clampDueDateToToday(dueDate);
     await sql`
-      INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
-      VALUES (${choreId}, ${dbUser.active_household_id}, ${dueDateStr}, 'pending')
+      INSERT INTO chore_assignments (chore_id, household_id, due_date, status, assigned_user_id)
+      VALUES (${choreId}, ${dbUser.active_household_id}, ${dueDateStr}, 'pending', ${private_to_user_id})
       ON CONFLICT (chore_id, due_date) DO NOTHING
     `;
   }
@@ -232,10 +244,12 @@ export async function updateChoreFrequency(
     UPDATE chores
     SET frequency = ${frequency}, frequency_interval = ${resolvedInterval}
     WHERE id = ${choreId} AND household_id = ${dbUser.active_household_id}
-    RETURNING id
+    RETURNING id, private_to_user_id
   `)[0];
 
   if (!updated) throw new Error("Chore not found");
+
+  const privateToUserId = updated.private_to_user_id as string | null;
 
   // 2. Reevaluate the next due date based on the most recent completion date
   // (falling back to today if it has never been completed) and the new frequency.
@@ -260,13 +274,13 @@ export async function updateChoreFrequency(
   `;
 
   if (isMoreFrequentThanWeekly(frequency, resolvedInterval)) {
-    await ensureUpcomingInstances(choreId, dbUser.active_household_id, frequency, resolvedInterval, baseDate);
+    await ensureUpcomingInstances(choreId, dbUser.active_household_id, frequency, resolvedInterval, baseDate, privateToUserId);
   } else {
     const nextDueDate = calculateNextDueDate(baseDate, frequency, resolvedInterval);
     const nextDueDateStr = nextDueDate.toISOString().split('T')[0];
     await sql`
-      INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
-      VALUES (${choreId}, ${dbUser.active_household_id}, ${nextDueDateStr}, 'pending')
+      INSERT INTO chore_assignments (chore_id, household_id, due_date, status, assigned_user_id)
+      VALUES (${choreId}, ${dbUser.active_household_id}, ${nextDueDateStr}, 'pending', ${privateToUserId})
       ON CONFLICT (chore_id, due_date) DO NOTHING
     `;
   }
@@ -304,7 +318,7 @@ export async function deleteTaskInstance(assignmentId: string) {
 
   // 1. Look up the instance and its chore's recurrence settings before removing it.
   const assignment = (await sql`
-    SELECT ca.id, ca.chore_id, c.frequency, c.frequency_interval
+    SELECT ca.id, ca.chore_id, c.frequency, c.frequency_interval, c.private_to_user_id
     FROM chore_assignments ca
     JOIN chores c ON ca.chore_id = c.id
     WHERE ca.id = ${assignmentId} AND ca.household_id = ${dbUser.active_household_id}
@@ -312,7 +326,7 @@ export async function deleteTaskInstance(assignmentId: string) {
 
   if (!assignment) throw new Error("Assignment not found");
 
-  const { chore_id, frequency, frequency_interval } = assignment;
+  const { chore_id, frequency, frequency_interval, private_to_user_id } = assignment;
 
   // 2. Remove just this single occurrence (not the chore template, and not
   // its other past/upcoming instances).
@@ -342,12 +356,12 @@ export async function deleteTaskInstance(assignmentId: string) {
       const baseDate = lastCompletion ? new Date(lastCompletion.completed_at) : new Date();
 
       if (isMoreFrequentThanWeekly(frequency, frequency_interval)) {
-        await ensureUpcomingInstances(chore_id, dbUser.active_household_id, frequency, frequency_interval, baseDate);
+        await ensureUpcomingInstances(chore_id, dbUser.active_household_id, frequency, frequency_interval, baseDate, private_to_user_id);
       } else {
         const nextDueDate = calculateNextDueDate(baseDate, frequency, frequency_interval);
         await sql`
-          INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
-          VALUES (${chore_id}, ${dbUser.active_household_id}, ${nextDueDate.toISOString().split('T')[0]}, 'pending')
+          INSERT INTO chore_assignments (chore_id, household_id, due_date, status, assigned_user_id)
+          VALUES (${chore_id}, ${dbUser.active_household_id}, ${nextDueDate.toISOString().split('T')[0]}, 'pending', ${private_to_user_id})
           ON CONFLICT (chore_id, due_date) DO NOTHING
         `;
       }
@@ -361,10 +375,17 @@ export async function assignTaskToSelf(assignmentId: string) {
   const dbUser = await getDbUser();
   if (!dbUser?.active_household_id) throw new Error("User or active household not found");
 
+  // Private tasks are permanently pinned to their owner and can never be
+  // (re)assigned to anyone else, so guard against a stale "Assign to Me"
+  // action targeting one that belongs to a different user.
   await sql`
-    UPDATE chore_assignments
+    UPDATE chore_assignments ca
     SET assigned_user_id = ${dbUser.id}
-    WHERE id = ${assignmentId} AND household_id = ${dbUser.active_household_id}
+    FROM chores c
+    WHERE ca.id = ${assignmentId}
+      AND ca.household_id = ${dbUser.active_household_id}
+      AND ca.chore_id = c.id
+      AND (c.private_to_user_id IS NULL OR c.private_to_user_id = ${dbUser.id})
   `;
 
   revalidatePath("/dashboard");
@@ -404,7 +425,7 @@ export async function completeTask(assignmentId: string, data: {
 
   // 1. Get assignment and chore details
   const assignment = (await sql`
-    SELECT ca.*, c.frequency, c.frequency_interval, h.timezone as household_timezone
+    SELECT ca.*, c.frequency, c.frequency_interval, c.private_to_user_id, h.timezone as household_timezone
     FROM chore_assignments ca
     JOIN chores c ON ca.chore_id = c.id
     JOIN households h ON ca.household_id = h.id
@@ -427,7 +448,7 @@ export async function completeTask(assignmentId: string, data: {
   `;
 
   // 3. If time taken was set, update the chore's estimated duration to the average of all actual durations so far
-  const { chore_id, frequency, frequency_interval, household_timezone } = assignment;
+  const { chore_id, frequency, frequency_interval, private_to_user_id, household_timezone } = assignment;
   if (hasSetTime) {
     await sql`
       UPDATE chores
@@ -460,12 +481,12 @@ export async function completeTask(assignmentId: string, data: {
     const completionDate = new Date(currentDateStr);
 
     if (isMoreFrequentThanWeekly(frequency, frequency_interval)) {
-      await ensureUpcomingInstances(chore_id, dbUser.active_household_id, frequency, frequency_interval, completionDate);
+      await ensureUpcomingInstances(chore_id, dbUser.active_household_id, frequency, frequency_interval, completionDate, private_to_user_id);
     } else {
       const nextDueDate = calculateNextDueDate(completionDate, frequency, frequency_interval);
       await sql`
-        INSERT INTO chore_assignments (chore_id, household_id, due_date, status)
-        VALUES (${chore_id}, ${dbUser.active_household_id}, ${nextDueDate.toISOString().split('T')[0]}, 'pending')
+        INSERT INTO chore_assignments (chore_id, household_id, due_date, status, assigned_user_id)
+        VALUES (${chore_id}, ${dbUser.active_household_id}, ${nextDueDate.toISOString().split('T')[0]}, 'pending', ${private_to_user_id})
         ON CONFLICT (chore_id, due_date) DO NOTHING
       `;
     }

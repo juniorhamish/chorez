@@ -10,7 +10,7 @@ vi.mock("next/cache", () => ({ revalidatePath: revalidatePathMock }));
 const getDbUserMock = vi.fn();
 vi.mock("./user-actions", () => ({ getDbUser: getDbUserMock }));
 
-const { addChore, updateChoreFrequency } = await import("./chore-actions");
+const { addChore, updateChoreFrequency, getHouseholdTasks } = await import("./chore-actions");
 const { getGravatarUrl } = await import("@/lib/gravatar");
 
 const DB_USER = { id: "user-1", active_household_id: "household-1" };
@@ -89,6 +89,55 @@ describe("addChore frequency-interval resolution", () => {
     await expect(addChore({ ...baseData, frequency: "weekly" })).rejects.toThrow(
       "User or active household not found"
     );
+  });
+});
+
+describe("getHouseholdTasks privacy filtering", () => {
+  it("derives is_private from whether the chore's private_to_user_id is set", async () => {
+    sqlMock.mockResolvedValueOnce([
+      { id: "t1", private_to_user_id: null, assigned_user_email: null },
+      { id: "t2", private_to_user_id: DB_USER.id, assigned_user_email: null },
+    ]);
+
+    const tasks = await getHouseholdTasks();
+
+    expect(tasks[0].is_private).toBe(false);
+    expect(tasks[1].is_private).toBe(true);
+  });
+
+  it("scopes the query to the active household and the current user (for the privacy check)", async () => {
+    sqlMock.mockResolvedValueOnce([]);
+    await getHouseholdTasks();
+
+    expect(sqlMock.mock.calls[0]).toContain(DB_USER.active_household_id);
+    expect(sqlMock.mock.calls[0]).toContain(DB_USER.id);
+  });
+});
+
+describe("addChore private task handling", () => {
+  const baseData = {
+    title: "Journal",
+    room_id: "room-1",
+    estimated_duration_minutes: 15,
+    last_completed_date: "2024-01-01",
+  };
+
+  it("stores no private_to_user_id and leaves the initial assignment unassigned for a regular (non-private) task", async () => {
+    sqlMock.mockResolvedValueOnce([{ id: "chore-1" }]); // INSERT INTO chores ... RETURNING id
+    await addChore({ ...baseData, frequency: "weekly" });
+
+    // VALUES (household_id, room_id, title, estimated_duration_minutes, frequency, frequency_interval, private_to_user_id)
+    expect(sqlMock.mock.calls[0][7]).toBeNull();
+    // VALUES (chore_id, household_id, due_date, status, assigned_user_id)
+    expect(sqlMock.mock.calls[1][4]).toBeNull();
+  });
+
+  it("stores the creator as private_to_user_id and pre-assigns the initial instance to them when is_private is true", async () => {
+    sqlMock.mockResolvedValueOnce([{ id: "chore-1" }]);
+    await addChore({ ...baseData, frequency: "weekly", is_private: true });
+
+    expect(sqlMock.mock.calls[0][7]).toBe(DB_USER.id);
+    expect(sqlMock.mock.calls[1][4]).toBe(DB_USER.id);
   });
 });
 

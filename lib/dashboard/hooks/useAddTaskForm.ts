@@ -11,6 +11,7 @@ export function useAddTaskForm(selectableRooms: Room[]) {
   const [newTaskLastCompleted, setNewTaskLastCompleted] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [newTaskFrequency, setNewTaskFrequency] = useState<ChoreFrequency>('weekly');
   const [newTaskFrequencyInterval, setNewTaskFrequencyInterval] = useState("1");
+  const [newTaskIsPrivate, setNewTaskIsPrivate] = useState(false);
   const [isAddingTask, setIsAddingTask] = useState(false);
 
   const openAddTask = () => {
@@ -20,6 +21,7 @@ export function useAddTaskForm(selectableRooms: Room[]) {
     setNewTaskLastCompleted(new Date().toLocaleDateString('en-CA'));
     setNewTaskFrequency('weekly');
     setNewTaskFrequencyInterval("1");
+    setNewTaskIsPrivate(false);
     setIsAddTaskOpen(true);
   };
 
@@ -38,6 +40,8 @@ export function useAddTaskForm(selectableRooms: Room[]) {
     setNewTaskFrequency,
     newTaskFrequencyInterval,
     setNewTaskFrequencyInterval,
+    newTaskIsPrivate,
+    setNewTaskIsPrivate,
     isAddingTask,
     setIsAddingTask,
     openAddTask,

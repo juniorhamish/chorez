@@ -20,6 +20,8 @@ interface AddTaskModalProps {
   setNewTaskFrequencyInterval: (value: string) => void;
   newTaskLastCompleted: string;
   setNewTaskLastCompleted: (value: string) => void;
+  newTaskIsPrivate: boolean;
+  setNewTaskIsPrivate: (value: boolean) => void;
   isCustomIntervalFrequency: boolean;
   isAddTaskValid: boolean;
   isAddingTask: boolean;
@@ -42,6 +44,8 @@ export default function AddTaskModal({
   setNewTaskFrequencyInterval,
   newTaskLastCompleted,
   setNewTaskLastCompleted,
+  newTaskIsPrivate,
+  setNewTaskIsPrivate,
   isCustomIntervalFrequency,
   isAddTaskValid,
   isAddingTask,
@@ -206,6 +210,26 @@ export default function AddTaskModal({
               onChange={(e) => setNewTaskLastCompleted(e.target.value)}
               className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
             />
+          </div>
+
+          {/* Just for me */}
+          <div className="bg-indigo-50/50 rounded-2xl px-5 py-4 flex items-start gap-4">
+            <input
+              id="newTaskIsPrivate"
+              type="checkbox"
+              checked={newTaskIsPrivate}
+              onChange={(e) => setNewTaskIsPrivate(e.target.checked)}
+              disabled={isAddingTask}
+              className="mt-1 h-5 w-5 shrink-0 rounded-md border-2 border-indigo-200 text-indigo-600 focus:ring-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+            <label htmlFor="newTaskIsPrivate" className="cursor-pointer">
+              <div className="text-xs font-black uppercase tracking-widest text-indigo-400">
+                Just for me
+              </div>
+              <p className="text-sm font-bold text-indigo-400/80 mt-1">
+                Only you can be assigned this task — nobody else in the household will see it.
+              </p>
+            </label>
           </div>
 
           {/* Submit */}

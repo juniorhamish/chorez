@@ -20,6 +20,8 @@ export interface Task {
   actual_duration_minutes: number | null;
   effort_rating: number | null;
   notes: string | null;
+  private_to_user_id: string | null;
+  is_private: boolean;
 }
 
 export interface Room {

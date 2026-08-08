@@ -19,6 +19,7 @@ describe("useAddTaskForm", () => {
     expect(result.current.newTaskLastCompleted).toBe(new Date().toLocaleDateString('en-CA'));
     expect(result.current.newTaskFrequency).toBe("weekly");
     expect(result.current.newTaskFrequencyInterval).toBe("1");
+    expect(result.current.newTaskIsPrivate).toBe(false);
     expect(result.current.isAddingTask).toBe(false);
   });
 
@@ -31,6 +32,7 @@ describe("useAddTaskForm", () => {
       result.current.setNewTaskDuration("45");
       result.current.setNewTaskFrequency("monthly");
       result.current.setNewTaskFrequencyInterval("3");
+      result.current.setNewTaskIsPrivate(true);
     });
 
     act(() => {
@@ -44,6 +46,7 @@ describe("useAddTaskForm", () => {
     expect(result.current.newTaskLastCompleted).toBe(new Date().toLocaleDateString('en-CA'));
     expect(result.current.newTaskFrequency).toBe("weekly");
     expect(result.current.newTaskFrequencyInterval).toBe("1");
+    expect(result.current.newTaskIsPrivate).toBe(false);
   });
 
   it("openAddTask defaults the room id to an empty string when there are no selectable rooms", () => {

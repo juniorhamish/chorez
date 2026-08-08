@@ -58,6 +58,20 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("optimizeHousehold - private tasks", () => {
+  it("excludes private chores from the upcoming-tasks query, so the optimizer never sees or touches them", async () => {
+    queueBaseQueries([TASK_A]);
+    getScheduleOptimizationActionsMock.mockResolvedValueOnce([]);
+
+    await optimizeHousehold(HOUSEHOLD, true);
+
+    // 2nd sql call is the upcomingTasks query; its literal SQL fragments
+    // (call args[0]) must filter out chores with a private_to_user_id set.
+    const upcomingTasksQueryStrings = sqlMock.mock.calls[1][0] as string[];
+    expect(upcomingTasksQueryStrings.join("")).toMatch(/private_to_user_id\s+IS\s+NULL/i);
+  });
+});
+
 describe("optimizeHousehold - duplicate same-day chore guard", () => {
   it("skips a reschedule that would put a chore on a day it's already scheduled on", async () => {
     queueBaseQueries([TASK_A, TASK_B]);

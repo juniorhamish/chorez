@@ -25,6 +25,8 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     actual_duration_minutes: null,
     effort_rating: null,
     notes: null,
+    private_to_user_id: null,
+    is_private: false,
     ...overrides,
   };
 }
