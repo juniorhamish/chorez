@@ -61,3 +61,13 @@ export interface Household {
   name: string;
   role: 'admin' | 'member';
 }
+
+export interface HouseholdMember {
+  id: string;
+  name: string | null;
+  email: string;
+  avatar: string | null;
+  color: string | null;
+  role: 'admin' | 'member';
+  joined_at: string;
+}

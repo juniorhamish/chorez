@@ -4,6 +4,7 @@ import React from "react";
 import {
   Plus,
   User as UserIcon,
+  Users,
   Home,
   ChevronDown,
   LogOut,
@@ -36,6 +37,7 @@ interface DashboardHeaderProps {
   openProfileSettings: () => void;
   openAddTask: () => void;
   openInviteMember: () => void;
+  openManageHousehold: () => void;
   isHouseholdAdmin: boolean;
   isOptimizingSchedule: boolean;
   hasUndoableOptimization: boolean;
@@ -61,6 +63,7 @@ export default function DashboardHeader({
   openProfileSettings,
   openAddTask,
   openInviteMember,
+  openManageHousehold,
   isHouseholdAdmin,
   isOptimizingSchedule,
   hasUndoableOptimization,
@@ -179,13 +182,26 @@ export default function DashboardHeader({
           </button>
         </div>
       </div>
-      <button
-        onClick={openInviteMember}
-        className="flex items-center gap-2 text-sm font-semibold bg-white border border-indigo-100 px-4 py-2 rounded-2xl shadow-sm hover:border-indigo-200 transition-colors w-full justify-center"
-      >
-        <UserIcon size={16} className="text-indigo-400" />
-        Invite Member
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={openInviteMember}
+          className="flex-1 flex items-center gap-2 text-sm font-semibold bg-white border border-indigo-100 px-4 py-2 rounded-2xl shadow-sm hover:border-indigo-200 transition-colors justify-center"
+        >
+          <UserIcon size={16} className="text-indigo-400" />
+          Invite Member
+        </button>
+        {isHouseholdAdmin && (
+          <button
+            onClick={openManageHousehold}
+            aria-label="Manage Household"
+            title="Manage Household"
+            className="flex items-center gap-2 text-sm font-semibold bg-white border border-indigo-100 px-4 py-2 rounded-2xl shadow-sm hover:border-indigo-200 transition-colors justify-center"
+          >
+            <Users size={16} className="text-indigo-400" />
+            Manage
+          </button>
+        )}
+      </div>
 
       {isHouseholdAdmin && (
         <div className="flex items-center gap-2 mt-3">

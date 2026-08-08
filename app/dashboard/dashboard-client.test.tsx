@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { DbUser, HouseholdUser, Room, Task } from "@/lib/dashboard/types";
+import type { DbUser, Household, HouseholdMember, HouseholdUser, Room, Task } from "@/lib/dashboard/types";
 
 // This suite exercises the full `DashboardClient` composition root (header,
 // week strip, room filter bar, task list and the complete-task modal wired
@@ -21,6 +21,7 @@ vi.mock("@auth0/nextjs-auth0/client", () => ({
 const completeTaskMock = vi.fn().mockResolvedValue(undefined);
 const toggleFavoriteRoomMock = vi.fn().mockResolvedValue(undefined);
 const toggleFavoriteChoreMock = vi.fn().mockResolvedValue(undefined);
+const removeMemberMock = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@/lib/actions/chore-actions", () => ({
   addChore: vi.fn().mockResolvedValue({ id: "chore-new" }),
@@ -41,6 +42,7 @@ vi.mock("@/lib/actions/user-actions", () => ({
   inviteUser: vi.fn().mockResolvedValue(undefined),
   respondToInvitation: vi.fn().mockResolvedValue(undefined),
   switchHousehold: vi.fn().mockResolvedValue(undefined),
+  removeMember: removeMemberMock,
 }));
 
 const { default: DashboardClient } = await import("./dashboard-client");
@@ -60,6 +62,15 @@ const ROOMS: Room[] = [
 
 const USERS: HouseholdUser[] = [
   { id: "user-1", name: "Alex", avatar: "A", color: null },
+];
+
+const ADMIN_HOUSEHOLDS: Household[] = [
+  { id: "household-1", name: "Our Home", role: "admin" },
+];
+
+const MEMBERS: HouseholdMember[] = [
+  { id: "user-1", name: "Alex", email: "alex@example.com", avatar: "A", color: null, role: "admin", joined_at: "2024-01-01" },
+  { id: "user-2", name: "Sam", email: "sam@example.com", avatar: "S", color: null, role: "member", joined_at: "2024-02-01" },
 ];
 
 const MONDAY = "2024-06-10";
@@ -190,5 +201,23 @@ describe("DashboardClient", () => {
 
     expect(toggleFavoriteRoomMock).toHaveBeenCalledWith("room-1");
     expect(kitchenChip.querySelector("svg.lucide-star")).toHaveClass("fill-amber-400");
+  });
+
+  it("lets a household admin remove a member from the Manage Household panel", async () => {
+    const user = userEvent.setup();
+    renderDashboard({
+      initialTasks: [],
+      initialHouseholds: ADMIN_HOUSEHOLDS,
+      initialMembers: MEMBERS,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Manage Household" }));
+    expect(screen.getByText('Members of "Our Home"')).toBeInTheDocument();
+    expect(screen.getByText("Sam")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Remove Sam" }));
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
+
+    expect(removeMemberMock).toHaveBeenCalledWith("user-2");
   });
 });

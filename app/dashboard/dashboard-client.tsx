@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@auth0/nextjs-auth0/client";
-import { updateUserName, updateNotificationSchedule, inviteUser, respondToInvitation, switchHousehold } from "@/lib/actions/user-actions";
+import { updateUserName, updateNotificationSchedule, inviteUser, respondToInvitation, switchHousehold, removeMember } from "@/lib/actions/user-actions";
 import { addChore, addRoom, completeTask, assignTaskToSelf, deleteChore, deleteTaskInstance, updateChoreFrequency, updateChoreRoom, toggleFavoriteRoom as toggleFavoriteRoomAction, toggleFavoriteChore as toggleFavoriteChoreAction } from "@/lib/actions/chore-actions";
 import { Mail, Loader2, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -16,6 +16,7 @@ import {
 import type {
   DbUser,
   Household,
+  HouseholdMember,
   HouseholdUser,
   Invitation,
   Room,
@@ -26,6 +27,7 @@ import { useViewPreferences } from "@/lib/dashboard/hooks/useViewPreferences";
 import { useTaskModals } from "@/lib/dashboard/hooks/useTaskModals";
 import { useHouseholdSwitcher } from "@/lib/dashboard/hooks/useHouseholdSwitcher";
 import { useInviteMember } from "@/lib/dashboard/hooks/useInviteMember";
+import { useManageHousehold } from "@/lib/dashboard/hooks/useManageHousehold";
 import { useAddTaskForm } from "@/lib/dashboard/hooks/useAddTaskForm";
 import { useAddRoomForm } from "@/lib/dashboard/hooks/useAddRoomForm";
 import { usePushNotifications } from "@/lib/dashboard/hooks/usePushNotifications";
@@ -44,9 +46,10 @@ import AddTaskModal from "@/app/dashboard/components/modals/AddTaskModal";
 import AddRoomModal from "@/app/dashboard/components/modals/AddRoomModal";
 import ProfileModal from "@/app/dashboard/components/modals/ProfileModal";
 import InviteMemberModal from "@/app/dashboard/components/modals/InviteMemberModal";
+import ManageHouseholdModal from "@/app/dashboard/components/modals/ManageHouseholdModal";
 import AiOptimizationSummaryModal from "@/app/dashboard/components/modals/AiOptimizationSummaryModal";
 
-export type { DbUser, Household, HouseholdUser, Invitation, Room, Task } from "@/lib/dashboard/types";
+export type { DbUser, Household, HouseholdMember, HouseholdUser, Invitation, Room, Task } from "@/lib/dashboard/types";
 
 /**
  * COMPONENTS
@@ -58,6 +61,7 @@ interface DashboardClientProps {
   initialRooms?: Room[];
   initialUsers?: HouseholdUser[];
   initialHouseholds?: Household[];
+  initialMembers?: HouseholdMember[];
   initialInvitations?: Invitation[];
   initialFavoriteRoomIds?: string[];
   initialFavoriteChoreIds?: string[];
@@ -74,6 +78,7 @@ export default function DashboardClient({
   initialRooms,
   initialUsers,
   initialHouseholds,
+  initialMembers,
   initialInvitations,
   initialFavoriteRoomIds,
   initialFavoriteChoreIds,
@@ -96,6 +101,7 @@ export default function DashboardClient({
   const selectableRooms = initialRooms ?? [];
   const users = useMemo(() => initialUsers ?? [], [initialUsers]);
   const households = useMemo(() => initialHouseholds ?? [], [initialHouseholds]);
+  const members = useMemo(() => initialMembers ?? [], [initialMembers]);
   const invitations = useMemo(
     () => (initialInvitations ?? []).filter((inv) => inv.status === "pending"),
     [initialInvitations]
@@ -193,6 +199,16 @@ export default function DashboardClient({
     setInviteError,
     openInviteMember,
   } = useInviteMember();
+
+  const {
+    isManageHouseholdOpen,
+    setIsManageHouseholdOpen,
+    removingMemberId,
+    setRemovingMemberId,
+    removeMemberError,
+    setRemoveMemberError,
+    openManageHousehold,
+  } = useManageHousehold();
 
   const {
     isAddTaskOpen,
@@ -414,6 +430,19 @@ export default function DashboardClient({
       router.refresh();
     } finally {
       setRespondingInvitationId(null);
+    }
+  };
+
+  const handleRemoveMember = async (memberId: string) => {
+    setRemovingMemberId(memberId);
+    setRemoveMemberError(null);
+    try {
+      await removeMember(memberId);
+      router.refresh();
+    } catch (err) {
+      setRemoveMemberError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setRemovingMemberId(null);
     }
   };
 
@@ -688,6 +717,7 @@ export default function DashboardClient({
         openProfileSettings={openProfileSettings}
         openAddTask={openAddTask}
         openInviteMember={openInviteMember}
+        openManageHousehold={openManageHousehold}
         isHouseholdAdmin={isHouseholdAdmin}
         isOptimizingSchedule={isOptimizing}
         hasUndoableOptimization={!!lastRun}
@@ -886,6 +916,21 @@ export default function DashboardClient({
             isInviteValid={isInviteValid}
             onClose={() => setIsInviteOpen(false)}
             onSubmit={handleInviteSubmit}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* 9b. MANAGE HOUSEHOLD MODAL (Drawer) */}
+      <AnimatePresence>
+        {isManageHouseholdOpen && (
+          <ManageHouseholdModal
+            activeHousehold={activeHousehold}
+            members={members}
+            currentUserId={currentUserId}
+            removingMemberId={removingMemberId}
+            removeMemberError={removeMemberError}
+            onClose={() => setIsManageHouseholdOpen(false)}
+            onRemoveMember={handleRemoveMember}
           />
         )}
       </AnimatePresence>

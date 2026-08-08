@@ -174,6 +174,72 @@ export async function switchHousehold(householdId: string) {
   revalidatePath("/dashboard");
 }
 
+export async function getHouseholdMembers() {
+  const user = await getDbUser();
+  if (!user?.active_household_id) return [];
+
+  return await sql`
+    SELECT u.id, u.full_name as name, u.email, u.avatar_label as avatar, u.color_theme as color, hm.role, hm.joined_at
+    FROM users u
+    JOIN household_members hm ON u.id = hm.user_id
+    WHERE hm.household_id = ${user.active_household_id}
+    ORDER BY hm.joined_at ASC
+  `;
+}
+
+export async function removeMember(memberUserId: string) {
+  const user = await getDbUser();
+  if (!user?.active_household_id) throw new Error("No active household");
+
+  if (memberUserId === user.id) {
+    throw new Error("You can't remove yourself from the household");
+  }
+
+  const requesterMembership = (await sql`
+    SELECT role FROM household_members 
+    WHERE user_id = ${user.id} AND household_id = ${user.active_household_id}
+  `)[0];
+
+  if (!requesterMembership || requesterMembership.role !== 'admin') {
+    throw new Error("Only admins can remove members");
+  }
+
+  const targetMembership = (await sql`
+    SELECT role FROM household_members 
+    WHERE user_id = ${memberUserId} AND household_id = ${user.active_household_id}
+  `)[0];
+
+  if (!targetMembership) {
+    throw new Error("User is not a member of this household");
+  }
+
+  const householdId = user.active_household_id;
+
+  await sql`
+    DELETE FROM household_members 
+    WHERE user_id = ${memberUserId} AND household_id = ${householdId}
+  `;
+
+  // If the household we just removed them from was their active one, fall
+  // back to the oldest household they still belong to (their original,
+  // default household). If they have no other memberships left, clear it
+  // so their next login provisions a fresh default household for them.
+  const fallbackHousehold = await sql`
+    SELECT household_id FROM household_members 
+    WHERE user_id = ${memberUserId} 
+    ORDER BY joined_at ASC 
+    LIMIT 1
+  `;
+
+  await sql`
+    UPDATE users 
+    SET active_household_id = ${fallbackHousehold[0]?.household_id ?? null} 
+    WHERE id = ${memberUserId} AND active_household_id = ${householdId}
+  `;
+
+  revalidatePath("/dashboard");
+}
+
 export async function inviteUser(email: string) {
   const user = await getDbUser();
   if (!user || !user.active_household_id) throw new Error("No active household");
