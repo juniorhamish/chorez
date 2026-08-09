@@ -9,6 +9,10 @@ describe("useManageHousehold", () => {
     expect(result.current.isManageHouseholdOpen).toBe(false);
     expect(result.current.removingMemberId).toBeNull();
     expect(result.current.removeMemberError).toBeNull();
+    expect(result.current.isEditingHouseholdName).toBe(false);
+    expect(result.current.householdNameInput).toBe("");
+    expect(result.current.isRenamingHousehold).toBe(false);
+    expect(result.current.renameHouseholdError).toBeNull();
   });
 
   it("openManageHousehold opens the modal and resets the error", () => {
@@ -61,5 +65,54 @@ describe("useManageHousehold", () => {
       result.current.setRemoveMemberError("Only admins can remove members");
     });
     expect(result.current.removeMemberError).toBe("Only admins can remove members");
+  });
+
+  it("startEditingHouseholdName seeds the input and opens edit mode", () => {
+    const { result } = renderHook(() => useManageHousehold());
+
+    act(() => {
+      result.current.setRenameHouseholdError("stale error");
+    });
+
+    act(() => {
+      result.current.startEditingHouseholdName("Our Home");
+    });
+
+    expect(result.current.isEditingHouseholdName).toBe(true);
+    expect(result.current.householdNameInput).toBe("Our Home");
+    expect(result.current.renameHouseholdError).toBeNull();
+  });
+
+  it("cancelEditingHouseholdName closes edit mode and clears the error", () => {
+    const { result } = renderHook(() => useManageHousehold());
+
+    act(() => {
+      result.current.startEditingHouseholdName("Our Home");
+    });
+    act(() => {
+      result.current.setRenameHouseholdError("Only admins can rename the household");
+    });
+
+    act(() => {
+      result.current.cancelEditingHouseholdName();
+    });
+
+    expect(result.current.isEditingHouseholdName).toBe(false);
+    expect(result.current.renameHouseholdError).toBeNull();
+  });
+
+  it("openManageHousehold also resets rename editing state", () => {
+    const { result } = renderHook(() => useManageHousehold());
+
+    act(() => {
+      result.current.startEditingHouseholdName("Our Home");
+    });
+
+    act(() => {
+      result.current.openManageHousehold();
+    });
+
+    expect(result.current.isEditingHouseholdName).toBe(false);
+    expect(result.current.renameHouseholdError).toBeNull();
   });
 });

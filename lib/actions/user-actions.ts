@@ -174,6 +174,33 @@ export async function switchHousehold(householdId: string) {
   revalidatePath("/dashboard");
 }
 
+export async function renameHousehold(name: string) {
+  const user = await getDbUser();
+  if (!user?.active_household_id) throw new Error("No active household");
+
+  const trimmedName = name.trim();
+  if (!trimmedName) {
+    throw new Error("Household name can't be empty");
+  }
+
+  const requesterMembership = (await sql`
+    SELECT role FROM household_members 
+    WHERE user_id = ${user.id} AND household_id = ${user.active_household_id}
+  `)[0];
+
+  if (!requesterMembership || requesterMembership.role !== 'admin') {
+    throw new Error("Only admins can rename the household");
+  }
+
+  await sql`
+    UPDATE households 
+    SET name = ${trimmedName} 
+    WHERE id = ${user.active_household_id}
+  `;
+
+  revalidatePath("/dashboard");
+}
+
 export async function getHouseholdMembers() {
   const user = await getDbUser();
   if (!user?.active_household_id) return [];

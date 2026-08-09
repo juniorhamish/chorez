@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Users, Loader2, UserMinus, ShieldCheck } from "lucide-react";
+import { X, Users, Loader2, UserMinus, ShieldCheck, Pencil, Check } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/app/dashboard/components/dashboard-ui-utils";
 import type { Household, HouseholdMember } from "@/lib/dashboard/types";
@@ -12,6 +12,14 @@ interface ManageHouseholdModalProps {
   currentUserId?: string;
   removingMemberId: string | null;
   removeMemberError: string | null;
+  isEditingHouseholdName: boolean;
+  householdNameInput: string;
+  setHouseholdNameInput: (value: string) => void;
+  isRenamingHousehold: boolean;
+  renameHouseholdError: string | null;
+  onStartEditHouseholdName: () => void;
+  onCancelEditHouseholdName: () => void;
+  onRenameHousehold: () => Promise<void>;
   onClose: () => void;
   onRemoveMember: (memberId: string) => Promise<void>;
 }
@@ -22,11 +30,20 @@ export default function ManageHouseholdModal({
   currentUserId,
   removingMemberId,
   removeMemberError,
+  isEditingHouseholdName,
+  householdNameInput,
+  setHouseholdNameInput,
+  isRenamingHousehold,
+  renameHouseholdError,
+  onStartEditHouseholdName,
+  onCancelEditHouseholdName,
+  onRenameHousehold,
   onClose,
   onRemoveMember,
 }: Readonly<ManageHouseholdModalProps>) {
   const [confirmingMemberId, setConfirmingMemberId] = useState<string | null>(null);
-  const isBusy = removingMemberId !== null;
+  const isBusy = removingMemberId !== null || isRenamingHousehold;
+  const isRenameValid = householdNameInput.trim().length > 0;
 
   return (
     <>
@@ -50,25 +67,76 @@ export default function ManageHouseholdModal({
         <div className="w-12 h-1.5 bg-indigo-100 rounded-full mx-auto mb-8" />
 
         <div className="flex justify-between items-start mb-6">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="w-12 h-12 shrink-0 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
               <Users size={22} />
             </div>
-            <div>
+            <div className="min-w-0">
               <h2 className="text-xl font-black">Manage Household</h2>
-              <p className="text-indigo-400 text-sm font-bold">
-                {activeHousehold ? `Members of "${activeHousehold.name}"` : "Members"}
-              </p>
+              {isEditingHouseholdName ? (
+                <div className="flex items-center gap-1.5 mt-1">
+                  <input
+                    type="text"
+                    autoFocus
+                    value={householdNameInput}
+                    onChange={(e) => setHouseholdNameInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && isRenameValid && !isRenamingHousehold) onRenameHousehold();
+                      if (e.key === "Escape") onCancelEditHouseholdName();
+                    }}
+                    placeholder="Household name"
+                    className="min-w-0 flex-1 bg-indigo-50/50 border-2 border-transparent outline-none rounded-xl px-3 py-1.5 font-bold text-sm transition-all"
+                  />
+                  <button
+                    onClick={onCancelEditHouseholdName}
+                    disabled={isRenamingHousehold}
+                    aria-label="Cancel rename"
+                    title="Cancel"
+                    className="p-1.5 rounded-xl text-indigo-400 hover:bg-indigo-100 transition-colors disabled:opacity-50 shrink-0"
+                  >
+                    <X size={14} />
+                  </button>
+                  <button
+                    onClick={onRenameHousehold}
+                    disabled={isRenamingHousehold || !isRenameValid}
+                    aria-label="Save household name"
+                    title="Save"
+                    className="p-1.5 rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 transition-colors disabled:opacity-50 shrink-0"
+                  >
+                    {isRenamingHousehold ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <p className="text-indigo-400 text-sm font-bold truncate">
+                    {activeHousehold ? `Members of "${activeHousehold.name}"` : "Members"}
+                  </p>
+                  {activeHousehold && (
+                    <button
+                      onClick={onStartEditHouseholdName}
+                      aria-label="Rename household"
+                      title="Rename household"
+                      className="p-1 rounded-lg text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors shrink-0"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <button
             onClick={onClose}
             disabled={isBusy}
-            className="p-2 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50"
+            className="p-2 hover:bg-indigo-50 rounded-full transition-colors disabled:opacity-50 shrink-0"
           >
             <X size={20} className="text-indigo-300" />
           </button>
         </div>
+
+        {renameHouseholdError && (
+          <p className="text-rose-500 text-sm font-bold mb-4 ml-1">{renameHouseholdError}</p>
+        )}
 
         {removeMemberError && (
           <p className="text-rose-500 text-sm font-bold mb-4 ml-1">{removeMemberError}</p>

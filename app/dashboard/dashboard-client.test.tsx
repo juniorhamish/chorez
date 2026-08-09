@@ -22,6 +22,7 @@ const completeTaskMock = vi.fn().mockResolvedValue(undefined);
 const toggleFavoriteRoomMock = vi.fn().mockResolvedValue(undefined);
 const toggleFavoriteChoreMock = vi.fn().mockResolvedValue(undefined);
 const removeMemberMock = vi.fn().mockResolvedValue(undefined);
+const renameHouseholdMock = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@/lib/actions/chore-actions", () => ({
   addChore: vi.fn().mockResolvedValue({ id: "chore-new" }),
@@ -43,6 +44,7 @@ vi.mock("@/lib/actions/user-actions", () => ({
   respondToInvitation: vi.fn().mockResolvedValue(undefined),
   switchHousehold: vi.fn().mockResolvedValue(undefined),
   removeMember: removeMemberMock,
+  renameHousehold: renameHouseholdMock,
 }));
 
 const { default: DashboardClient } = await import("./dashboard-client");
@@ -219,5 +221,27 @@ describe("DashboardClient", () => {
     await user.click(screen.getByRole("button", { name: "Confirm" }));
 
     expect(removeMemberMock).toHaveBeenCalledWith("user-2");
+  });
+
+  it("lets a household admin rename the household from the Manage Household panel", async () => {
+    const user = userEvent.setup();
+    renderDashboard({
+      initialTasks: [],
+      initialHouseholds: ADMIN_HOUSEHOLDS,
+      initialMembers: MEMBERS,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Manage Household" }));
+    expect(screen.getByText('Members of "Our Home"')).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Rename household" }));
+    const nameInput = screen.getByPlaceholderText("Household name");
+    expect(nameInput).toHaveValue("Our Home");
+
+    await user.clear(nameInput);
+    await user.type(nameInput, "The Smiths");
+    await user.click(screen.getByRole("button", { name: "Save household name" }));
+
+    expect(renameHouseholdMock).toHaveBeenCalledWith("The Smiths");
   });
 });

@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@auth0/nextjs-auth0/client";
-import { updateUserName, updateNotificationSchedule, inviteUser, respondToInvitation, switchHousehold, removeMember } from "@/lib/actions/user-actions";
+import { updateUserName, updateNotificationSchedule, inviteUser, respondToInvitation, switchHousehold, removeMember, renameHousehold } from "@/lib/actions/user-actions";
 import { addChore, addRoom, completeTask, assignTaskToSelf, deleteChore, deleteTaskInstance, updateChoreFrequency, updateChoreRoom, toggleFavoriteRoom as toggleFavoriteRoomAction, toggleFavoriteChore as toggleFavoriteChoreAction } from "@/lib/actions/chore-actions";
 import { Mail, Loader2, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -208,6 +208,15 @@ export default function DashboardClient({
     removeMemberError,
     setRemoveMemberError,
     openManageHousehold,
+    isEditingHouseholdName,
+    householdNameInput,
+    setHouseholdNameInput,
+    isRenamingHousehold,
+    setIsRenamingHousehold,
+    renameHouseholdError,
+    setRenameHouseholdError,
+    startEditingHouseholdName,
+    cancelEditingHouseholdName,
   } = useManageHousehold();
 
   const {
@@ -443,6 +452,22 @@ export default function DashboardClient({
       setRemoveMemberError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
       setRemovingMemberId(null);
+    }
+  };
+
+  const handleRenameHousehold = async () => {
+    const trimmedName = householdNameInput.trim();
+    if (!trimmedName) return;
+    setIsRenamingHousehold(true);
+    setRenameHouseholdError(null);
+    try {
+      await renameHousehold(trimmedName);
+      cancelEditingHouseholdName();
+      router.refresh();
+    } catch (err) {
+      setRenameHouseholdError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setIsRenamingHousehold(false);
     }
   };
 
@@ -929,6 +954,14 @@ export default function DashboardClient({
             currentUserId={currentUserId}
             removingMemberId={removingMemberId}
             removeMemberError={removeMemberError}
+            isEditingHouseholdName={isEditingHouseholdName}
+            householdNameInput={householdNameInput}
+            setHouseholdNameInput={setHouseholdNameInput}
+            isRenamingHousehold={isRenamingHousehold}
+            renameHouseholdError={renameHouseholdError}
+            onStartEditHouseholdName={() => startEditingHouseholdName(activeHousehold?.name ?? "")}
+            onCancelEditHouseholdName={cancelEditingHouseholdName}
+            onRenameHousehold={handleRenameHousehold}
             onClose={() => setIsManageHouseholdOpen(false)}
             onRemoveMember={handleRemoveMember}
           />
