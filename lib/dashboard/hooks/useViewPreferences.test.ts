@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getStartOfWeek } from "@/lib/dashboard/date-utils";
-import { useViewPreferences } from "./useViewPreferences";
+import { SELECTED_DAY_SAVED_AT_KEY, useViewPreferences } from "./useViewPreferences";
 
 let setItemSpy: ReturnType<typeof vi.spyOn>;
 let cookieSetSpy: ReturnType<typeof vi.spyOn>;
@@ -60,7 +60,8 @@ describe("useViewPreferences", () => {
 
     expect(setItemSpy).toHaveBeenCalledWith("chorez_view_mode", "mine");
     expect(setItemSpy).toHaveBeenCalledWith("chorez_selected_room", "all");
-    expect(setItemSpy).toHaveBeenCalledTimes(4);
+    // selectedDay writes both its value and the SELECTED_DAY_SAVED_AT_KEY timestamp.
+    expect(setItemSpy).toHaveBeenCalledTimes(5);
     expect(cookieSetSpy).toHaveBeenCalledTimes(4);
   });
 
@@ -104,9 +105,64 @@ describe("useViewPreferences", () => {
       result.current.setSelectedDay(newDay);
     });
 
-    expect(setItemSpy).toHaveBeenCalledTimes(1);
+    expect(setItemSpy).toHaveBeenCalledTimes(2);
     expect(setItemSpy).toHaveBeenCalledWith("chorez_selected_day", newDay.toISOString());
+    expect(setItemSpy).toHaveBeenCalledWith(SELECTED_DAY_SAVED_AT_KEY, expect.any(String));
     expect(cookieSetSpy).toHaveBeenCalledTimes(1);
+  });
+
+  describe("stale selectedDay expiry", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2024-06-12T09:00:00"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("resets selectedDay to today when it was saved on an earlier calendar day", () => {
+      localStorage.setItem("chorez_selected_day", new Date("2024-06-11T15:00:00").toISOString());
+      localStorage.setItem(SELECTED_DAY_SAVED_AT_KEY, new Date("2024-06-11T15:00:00").toISOString());
+
+      const { result } = renderHook(() =>
+        useViewPreferences({ initialSelectedDay: "2024-06-11T15:00:00" })
+      );
+
+      expect(result.current.selectedDay).toEqual(new Date("2024-06-12T09:00:00"));
+    });
+
+    it("keeps selectedDay when it was saved earlier today", () => {
+      localStorage.setItem("chorez_selected_day", new Date("2024-06-12T00:00:00").toISOString());
+      localStorage.setItem(SELECTED_DAY_SAVED_AT_KEY, new Date("2024-06-12T00:30:00").toISOString());
+
+      const { result } = renderHook(() =>
+        useViewPreferences({ initialSelectedDay: "2024-06-12T00:00:00" })
+      );
+
+      expect(result.current.selectedDay).toEqual(new Date("2024-06-12T00:00:00"));
+    });
+
+    it("keeps selectedDay when there is no saved-at record", () => {
+      localStorage.setItem("chorez_selected_day", new Date("2024-06-11T15:00:00").toISOString());
+
+      const { result } = renderHook(() =>
+        useViewPreferences({ initialSelectedDay: "2024-06-11T15:00:00" })
+      );
+
+      expect(result.current.selectedDay).toEqual(new Date("2024-06-11T15:00:00"));
+    });
+
+    it("keeps selectedDay when the saved-at record is corrupt", () => {
+      localStorage.setItem("chorez_selected_day", new Date("2024-06-11T15:00:00").toISOString());
+      localStorage.setItem(SELECTED_DAY_SAVED_AT_KEY, "not-a-date");
+
+      const { result } = renderHook(() =>
+        useViewPreferences({ initialSelectedDay: "2024-06-11T15:00:00" })
+      );
+
+      expect(result.current.selectedDay).toEqual(new Date("2024-06-11T15:00:00"));
+    });
   });
 
   it("persists only selectedRoom to localStorage+cookie when it changes", () => {
