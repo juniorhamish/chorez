@@ -15,6 +15,7 @@ import {
   Sparkles,
   Undo2,
   ClipboardList,
+  LifeBuoy,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/app/dashboard/components/dashboard-ui-utils";
@@ -45,6 +46,7 @@ interface DashboardHeaderProps {
   hasUndoableOptimization: boolean;
   onOptimizeSchedule: () => void;
   onViewLastOptimization: () => void;
+  openHelp: () => void;
 }
 
 export default function DashboardHeader({
@@ -72,6 +74,7 @@ export default function DashboardHeader({
   hasUndoableOptimization,
   onOptimizeSchedule,
   onViewLastOptimization,
+  openHelp,
 }: Readonly<DashboardHeaderProps>) {
   return (
     <header className="px-6 pt-10 pb-6 bg-white/50 backdrop-blur-md sticky top-0 z-10 border-b border-indigo-50">
@@ -173,6 +176,14 @@ export default function DashboardHeader({
             className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
           >
             <ClipboardList size={18} />
+          </button>
+          <button
+            onClick={openHelp}
+            aria-label="Help"
+            title="Help"
+            className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+          >
+            <LifeBuoy size={18} />
           </button>
           <a
             href="/auth/logout"

@@ -117,3 +117,32 @@ For each household, the response includes an `appliedActions` array describing e
 ```
 
 `assign` actions include `previousUserId`/`newUserId` instead of due dates. Actions Gemini proposed but that referenced an unknown/invalid id, user, or date are reported separately under `skippedActions` (with a `reason`) and are never applied.
+
+## Help Button (Report an Issue on GitHub)
+
+The Help (life-buoy) icon in the dashboard header opens a "Report an Issue" form. Submitting it calls the `submitHelpReport` server action (`lib/actions/feedback-actions.ts`), which raises the report as an issue on this project's GitHub repository — or adds it as a comment to an existing matching issue — **anonymously**, using a single shared service-account token. Users never need a GitHub account of their own.
+
+The flow, end to end:
+
+1. **Validation** — basic length checks (rejects empty/too-short or excessively long messages).
+2. **Rate limiting** — at most 1 report per app user per rolling 5-minute window, tracked in the `feedback_reports` table (`migrations/0010_feedback_reports.sql`), so a single user can't spam the repository with issues.
+3. **Duplicate search** — keywords from the report are used to search the repo's **open** issues via the GitHub REST search API (`lib/github.ts`), gathering a handful of candidates.
+4. **AI screening** (`lib/feedback-screening.ts`, via the same Gemini API used by the schedule optimiser) — checks that the report is a genuine, coherent English sentence describing a real problem or suggestion (rejecting gibberish/spam/keyboard-mashing with a friendly error instead of submitting it), drafts a short issue title, and judges whether it's a semantic duplicate of one of the candidate issues found above.
+5. **GitHub call** — if a duplicate is found, the report is posted as a comment on that issue; otherwise a brand-new issue is opened. Either way it's authored by the service account, never the reporting user.
+
+### Configuration
+
+```env
+# Personal access token for a dedicated GitHub service account, with
+# read/write access to Issues on GITHUB_REPO.
+GITHUB_TOKEN=<personal access token>
+GITHUB_REPO=juniorhamish/chorez
+```
+
+To set this up:
+
+1. Create (or designate) a GitHub account to act as the service account — it doesn't need to be a human's personal account.
+2. Generate a personal access token for that account (a fine-grained token scoped to just this repository with "Issues: Read and write" permission is sufficient; a classic token needs the `repo` scope).
+3. Set `GITHUB_TOKEN` to that token and `GITHUB_REPO` to the `owner/repo` of the repository issues should be raised in.
+
+`GEMINI_API_KEY` (see above) is also required, since the screening step reuses the existing Gemini integration.

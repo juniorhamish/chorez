@@ -34,6 +34,7 @@ import { useAddTaskForm } from "@/lib/dashboard/hooks/useAddTaskForm";
 import { useAddRoomForm } from "@/lib/dashboard/hooks/useAddRoomForm";
 import { usePushNotifications } from "@/lib/dashboard/hooks/usePushNotifications";
 import { useScheduleOptimization } from "@/lib/dashboard/hooks/useScheduleOptimization";
+import { useHelpReport } from "@/lib/dashboard/hooks/useHelpReport";
 import type { ScheduleOptimizationRun } from "@/lib/actions/schedule-optimization-actions";
 import { getGreeting, ICON_OPTIONS } from "@/app/dashboard/components/dashboard-ui-utils";
 import DashboardHeader from "@/app/dashboard/components/DashboardHeader";
@@ -50,6 +51,7 @@ import ProfileModal from "@/app/dashboard/components/modals/ProfileModal";
 import InviteMemberModal from "@/app/dashboard/components/modals/InviteMemberModal";
 import ManageHouseholdModal from "@/app/dashboard/components/modals/ManageHouseholdModal";
 import AiOptimizationSummaryModal from "@/app/dashboard/components/modals/AiOptimizationSummaryModal";
+import HelpReportModal from "@/app/dashboard/components/modals/HelpReportModal";
 import TaskLibraryView from "@/app/dashboard/components/TaskLibraryView";
 
 export type { Chore, DbUser, Household, HouseholdMember, HouseholdUser, Invitation, Room, Task } from "@/lib/dashboard/types";
@@ -288,6 +290,18 @@ export default function DashboardClient({
     undoLastRun,
   } = useScheduleOptimization(initialLastOptimizationRun ?? null);
   const isHouseholdAdmin = activeHousehold?.role === 'admin';
+
+  const {
+    isHelpOpen,
+    reportMessage,
+    setReportMessage,
+    isSubmittingReport,
+    reportError,
+    reportResult,
+    openHelp,
+    closeHelp,
+    submitReport,
+  } = useHelpReport();
 
   // Refresh state and handler
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -803,6 +817,7 @@ export default function DashboardClient({
         hasUndoableOptimization={!!lastRun}
         onOptimizeSchedule={handleOptimizeSchedule}
         onViewLastOptimization={viewLastRun}
+        openHelp={openHelp}
       />
 
       {/* 2. WEEKLY CALENDAR SLIDER */}
@@ -1036,6 +1051,21 @@ export default function DashboardClient({
         onDeleteChore={openTaskLibraryDeleteChore}
         onAddTask={handleAddTaskFromLibrary}
       />
+
+      {/* 9c. HELP / REPORT AN ISSUE MODAL (Drawer) */}
+      <AnimatePresence>
+        {isHelpOpen && (
+          <HelpReportModal
+            reportMessage={reportMessage}
+            setReportMessage={setReportMessage}
+            isSubmittingReport={isSubmittingReport}
+            reportError={reportError}
+            reportResult={reportResult}
+            onClose={closeHelp}
+            onSubmit={submitReport}
+          />
+        )}
+      </AnimatePresence>
 
       {/* 10. AI SCHEDULE OPTIMIZATION SUMMARY MODAL (Drawer) */}
       <AnimatePresence>
