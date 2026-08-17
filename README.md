@@ -125,7 +125,7 @@ The Help (life-buoy) icon in the dashboard header opens a "Report an Issue" form
 The flow, end to end:
 
 1. **Validation** — basic length checks (rejects empty/too-short or excessively long messages).
-2. **Rate limiting** — at most 1 report per app user per rolling 5-minute window, tracked in the `feedback_reports` table (`migrations/0010_feedback_reports.sql`), so a single user can't spam the repository with issues.
+2. **Rate limiting** — at most 1 report per app user per rolling 2-minute window, tracked in the `feedback_reports` table (`migrations/0010_feedback_reports.sql`), so a single user can't spam the repository with issues.
 3. **Duplicate search** — keywords from the report are used to search the repo's **open** issues via the GitHub REST search API (`lib/github.ts`), gathering a handful of candidates.
 4. **AI screening** (`lib/feedback-screening.ts`, via the same Gemini API used by the schedule optimiser) — checks that the report is a genuine, coherent English sentence describing a real problem or suggestion (rejecting gibberish/spam/keyboard-mashing with a friendly error instead of submitting it), drafts a short issue title, and judges whether it's a semantic duplicate of one of the candidate issues found above.
 5. **GitHub call** — if a duplicate is found, the report is posted as a comment on that issue; otherwise a brand-new issue is opened. Either way it's authored by the service account, never the reporting user.

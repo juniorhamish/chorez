@@ -8,7 +8,7 @@ import { screenFeedbackReport } from "@/lib/feedback-screening";
 // At most this many reports per user within the rolling window below, to
 // stop a single user from spamming the GitHub repo with new issues/comments.
 const RATE_LIMIT_MAX_REPORTS = 1;
-const RATE_LIMIT_WINDOW_MINUTES = 5;
+const RATE_LIMIT_WINDOW_MINUTES = 2;
 
 const MIN_MESSAGE_LENGTH = 10;
 const MAX_MESSAGE_LENGTH = 2000;
