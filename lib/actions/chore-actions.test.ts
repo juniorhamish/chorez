@@ -10,7 +10,7 @@ vi.mock("next/cache", () => ({ revalidatePath: revalidatePathMock }));
 const getDbUserMock = vi.fn();
 vi.mock("./user-actions", () => ({ getDbUser: getDbUserMock }));
 
-const { addChore, updateChoreFrequency, getHouseholdTasks } = await import("./chore-actions");
+const { addChore, updateChoreFrequency, getHouseholdTasks, getHouseholdChores } = await import("./chore-actions");
 const { getGravatarUrl } = await import("@/lib/gravatar");
 
 const DB_USER = { id: "user-1", active_household_id: "household-1" };
@@ -111,6 +111,37 @@ describe("getHouseholdTasks privacy filtering", () => {
 
     expect(sqlMock.mock.calls[0]).toContain(DB_USER.active_household_id);
     expect(sqlMock.mock.calls[0]).toContain(DB_USER.id);
+  });
+});
+
+describe("getHouseholdChores privacy filtering", () => {
+  it("derives is_private from whether the chore's private_to_user_id is set", async () => {
+    sqlMock.mockResolvedValueOnce([
+      { id: "c1", private_to_user_id: null },
+      { id: "c2", private_to_user_id: DB_USER.id },
+    ]);
+
+    const chores = await getHouseholdChores();
+
+    expect(chores[0].is_private).toBe(false);
+    expect(chores[1].is_private).toBe(true);
+  });
+
+  it("scopes the query to the active household and the current user (for the privacy check)", async () => {
+    sqlMock.mockResolvedValueOnce([]);
+    await getHouseholdChores();
+
+    expect(sqlMock.mock.calls[0]).toContain(DB_USER.active_household_id);
+    expect(sqlMock.mock.calls[0]).toContain(DB_USER.id);
+  });
+
+  it("returns an empty array when there is no active household", async () => {
+    getDbUserMock.mockResolvedValue({ id: "user-1", active_household_id: null });
+
+    const chores = await getHouseholdChores();
+
+    expect(chores).toEqual([]);
+    expect(sqlMock).not.toHaveBeenCalled();
   });
 });
 

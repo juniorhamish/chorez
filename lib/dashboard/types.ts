@@ -24,6 +24,20 @@ export interface Task {
   is_private: boolean;
 }
 
+export interface Chore {
+  id: string;
+  title: string;
+  room_id: string | null;
+  room_name: string | null;
+  room_icon_name: string | null;
+  estimated_duration_minutes: number | null;
+  frequency: ChoreFrequency;
+  frequency_interval: number | null;
+  private_to_user_id: string | null;
+  is_private: boolean;
+  next_due_date: string | Date | null;
+}
+
 export interface Room {
   id: string;
   household_id?: string;

@@ -49,6 +49,17 @@ describe("useAddTaskForm", () => {
     expect(result.current.newTaskIsPrivate).toBe(false);
   });
 
+  it("openAddTask seeds the room with the given preselectedRoomId when provided", () => {
+    const { result } = renderHook(() => useAddTaskForm(ROOMS));
+
+    act(() => {
+      result.current.openAddTask("room-2");
+    });
+
+    expect(result.current.isAddTaskOpen).toBe(true);
+    expect(result.current.newTaskRoomId).toBe("room-2");
+  });
+
   it("openAddTask defaults the room id to an empty string when there are no selectable rooms", () => {
     const { result } = renderHook(() => useAddTaskForm([]));
 

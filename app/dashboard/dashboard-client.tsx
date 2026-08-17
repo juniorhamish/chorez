@@ -14,6 +14,7 @@ import {
   isSameDay,
 } from "@/lib/dashboard/date-utils";
 import type {
+  Chore,
   DbUser,
   Household,
   HouseholdMember,
@@ -25,6 +26,7 @@ import type {
 import { useStopwatch } from "@/lib/dashboard/hooks/useStopwatch";
 import { useViewPreferences } from "@/lib/dashboard/hooks/useViewPreferences";
 import { useTaskModals } from "@/lib/dashboard/hooks/useTaskModals";
+import { useTaskLibrary } from "@/lib/dashboard/hooks/useTaskLibrary";
 import { useHouseholdSwitcher } from "@/lib/dashboard/hooks/useHouseholdSwitcher";
 import { useInviteMember } from "@/lib/dashboard/hooks/useInviteMember";
 import { useManageHousehold } from "@/lib/dashboard/hooks/useManageHousehold";
@@ -48,8 +50,9 @@ import ProfileModal from "@/app/dashboard/components/modals/ProfileModal";
 import InviteMemberModal from "@/app/dashboard/components/modals/InviteMemberModal";
 import ManageHouseholdModal from "@/app/dashboard/components/modals/ManageHouseholdModal";
 import AiOptimizationSummaryModal from "@/app/dashboard/components/modals/AiOptimizationSummaryModal";
+import TaskLibraryView from "@/app/dashboard/components/TaskLibraryView";
 
-export type { DbUser, Household, HouseholdMember, HouseholdUser, Invitation, Room, Task } from "@/lib/dashboard/types";
+export type { Chore, DbUser, Household, HouseholdMember, HouseholdUser, Invitation, Room, Task } from "@/lib/dashboard/types";
 
 /**
  * COMPONENTS
@@ -58,6 +61,7 @@ export type { DbUser, Household, HouseholdMember, HouseholdUser, Invitation, Roo
 interface DashboardClientProps {
   initialDbUser?: DbUser | null;
   initialTasks?: Task[];
+  initialChores?: Chore[];
   initialRooms?: Room[];
   initialUsers?: HouseholdUser[];
   initialHouseholds?: Household[];
@@ -75,6 +79,7 @@ interface DashboardClientProps {
 export default function DashboardClient({
   initialDbUser,
   initialTasks,
+  initialChores,
   initialRooms,
   initialUsers,
   initialHouseholds,
@@ -94,6 +99,7 @@ export default function DashboardClient({
   const greeting = getGreeting();
 
   const tasks = useMemo(() => initialTasks ?? [], [initialTasks]);
+  const chores = useMemo(() => initialChores ?? [], [initialChores]);
   const rooms = useMemo<Room[]>(
     () => [{ id: "all", name: "All", icon_name: null }, ...(initialRooms ?? [])],
     [initialRooms]
@@ -253,6 +259,14 @@ export default function DashboardClient({
     setIsAddingRoom,
     openAddRoom,
   } = useAddRoomForm(ICON_OPTIONS[0]);
+
+  const {
+    isTaskLibraryOpen,
+    setIsTaskLibraryOpen,
+    selectedLibraryRoom,
+    setSelectedLibraryRoom,
+    openTaskLibrary,
+  } = useTaskLibrary();
 
   const {
     isPushSupported,
@@ -643,6 +657,46 @@ export default function DashboardClient({
     }
   };
 
+  // Adapts a `Chore` (template) into the minimal `Task`-shaped object read
+  // by the edit-frequency/edit-room/delete modals — those modals only ever
+  // read `chore_id`, `title`, `frequency`, `frequency_interval`, and
+  // `room_id` off the object they're given, so a chore template can drive
+  // them directly from the Task Library without any modal changes.
+  const toEditableChore = (chore: Chore): Task => ({
+    id: chore.id,
+    chore_id: chore.id,
+    assigned_user_id: null,
+    due_date: chore.next_due_date ?? new Date(),
+    status: 'pending',
+    title: chore.title,
+    estimated_duration_minutes: chore.estimated_duration_minutes,
+    frequency: chore.frequency,
+    frequency_interval: chore.frequency_interval,
+    room_name: chore.room_name,
+    room_id: chore.room_id,
+    assigned_user_name: null,
+    assigned_user_avatar: null,
+    assigned_user_avatar_url: null,
+    assigned_user_color: null,
+    completed_at: null,
+    actual_duration_minutes: null,
+    effort_rating: null,
+    notes: null,
+    private_to_user_id: chore.private_to_user_id,
+    is_private: chore.is_private,
+  });
+
+  const openTaskLibraryEditFrequency = (chore: Chore) => openEditFrequency(toEditableChore(chore));
+  const openTaskLibraryEditRoom = (chore: Chore) => openEditRoom(toEditableChore(chore));
+  const openTaskLibraryDeleteChore = (chore: Chore) => setDeletingChore(toEditableChore(chore));
+
+  // Closes the library and hands off to the Add Task form, pre-filled with
+  // whichever room was being browsed (or no room when "All" is selected).
+  const handleAddTaskFromLibrary = (roomId?: string) => {
+    setIsTaskLibraryOpen(false);
+    openAddTask(roomId);
+  };
+
   const handleUpdateRoom = async () => {
     if (!editingRoomTask || !editRoomValue) return;
     setIsUpdatingRoom(true);
@@ -741,6 +795,7 @@ export default function DashboardClient({
         handleRefresh={handleRefresh}
         openProfileSettings={openProfileSettings}
         openAddTask={openAddTask}
+        openTaskLibrary={openTaskLibrary}
         openInviteMember={openInviteMember}
         openManageHousehold={openManageHousehold}
         isHouseholdAdmin={isHouseholdAdmin}
@@ -967,6 +1022,20 @@ export default function DashboardClient({
           />
         )}
       </AnimatePresence>
+
+      {/* TASK LIBRARY (full-screen overlay) */}
+      <TaskLibraryView
+        isOpen={isTaskLibraryOpen}
+        onClose={() => setIsTaskLibraryOpen(false)}
+        chores={chores}
+        rooms={rooms}
+        selectedRoom={selectedLibraryRoom}
+        setSelectedRoom={setSelectedLibraryRoom}
+        onEditFrequency={openTaskLibraryEditFrequency}
+        onEditRoom={openTaskLibraryEditRoom}
+        onDeleteChore={openTaskLibraryDeleteChore}
+        onAddTask={handleAddTaskFromLibrary}
+      />
 
       {/* 10. AI SCHEDULE OPTIMIZATION SUMMARY MODAL (Drawer) */}
       <AnimatePresence>

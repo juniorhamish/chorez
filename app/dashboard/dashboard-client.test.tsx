@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { DbUser, Household, HouseholdMember, HouseholdUser, Room, Task } from "@/lib/dashboard/types";
+import type { Chore, DbUser, Household, HouseholdMember, HouseholdUser, Room, Task } from "@/lib/dashboard/types";
 
 // This suite exercises the full `DashboardClient` composition root (header,
 // week strip, room filter bar, task list and the complete-task modal wired
@@ -101,6 +101,23 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     notes: null,
     private_to_user_id: null,
     is_private: false,
+    ...overrides,
+  };
+}
+
+function makeChore(overrides: Partial<Chore> = {}): Chore {
+  return {
+    id: "chore-1",
+    title: "Wash dishes",
+    room_id: "room-1",
+    room_name: "Kitchen",
+    room_icon_name: "UtensilsCrossed",
+    estimated_duration_minutes: 15,
+    frequency: "daily",
+    frequency_interval: null,
+    private_to_user_id: null,
+    is_private: false,
+    next_due_date: null,
     ...overrides,
   };
 }
@@ -243,5 +260,41 @@ describe("DashboardClient", () => {
     await user.click(screen.getByRole("button", { name: "Save household name" }));
 
     expect(renameHouseholdMock).toHaveBeenCalledWith("The Smiths");
+  });
+
+  it("opens the Task Library from the header and shows every chore template", async () => {
+    const user = userEvent.setup();
+    const kitchenChore = makeChore({ id: "chore-kitchen", title: "Wash dishes", room_id: "room-1" });
+    const bathroomChore = makeChore({ id: "chore-bathroom", title: "Scrub tub", room_id: "room-2" });
+    renderDashboard({ initialTasks: [], initialChores: [kitchenChore, bathroomChore] });
+
+    expect(screen.queryByText("Task Library")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Task Library" }));
+
+    expect(screen.getByText("Task Library")).toBeInTheDocument();
+    expect(screen.getByText("Wash dishes")).toBeInTheDocument();
+    expect(screen.getByText("Scrub tub")).toBeInTheDocument();
+  });
+
+  it("hands off from the Task Library's add-task shortcut to the Add Task form pre-filled with the filtered room", async () => {
+    const user = userEvent.setup();
+    const kitchenChore = makeChore({ id: "chore-kitchen", title: "Wash dishes", room_id: "room-1" });
+    renderDashboard({ initialTasks: [], initialChores: [kitchenChore] });
+
+    await user.click(screen.getByRole("button", { name: "Task Library" }));
+    // Both the calendar view's room filter and the library's own room
+    // filter render a "Kitchen" chip; the library's is the last one added
+    // to the DOM since it's rendered as an overlay on top.
+    const kitchenChips = screen.getAllByRole("button", { name: "Kitchen" });
+    await user.click(kitchenChips[kitchenChips.length - 1]);
+    await user.click(screen.getByRole("button", { name: "Add Task to Kitchen" }));
+
+    // The library overlay closes (waiting for its exit animation to finish)
+    // and hands off into the Add Task form, pre-filled with the room that
+    // was being browsed.
+    await waitFor(() => expect(screen.queryByText("Task Library")).not.toBeInTheDocument());
+    const roomSelect = screen.getByDisplayValue("Kitchen") as HTMLSelectElement;
+    expect(roomSelect.value).toBe("room-1");
   });
 });

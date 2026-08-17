@@ -74,6 +74,43 @@ export async function getHouseholdTasks() {
   }));
 }
 
+export async function getHouseholdChores() {
+  const dbUser = await getDbUser();
+  if (!dbUser?.active_household_id) return [];
+
+  // Fetch one row per chore template (not per due-dated assignment), joined
+  // with its room and the earliest still-pending assignment (if any), so the
+  // Task Library can show every chore that has been created for the
+  // household regardless of whether it currently has an upcoming instance.
+  // Chores private to another user are excluded entirely, matching the
+  // visibility rule used by getHouseholdTasks().
+  const chores = await sql`
+    SELECT
+      c.id,
+      c.title,
+      c.room_id,
+      r.name as room_name,
+      r.icon_name as room_icon_name,
+      c.estimated_duration_minutes,
+      c.frequency,
+      c.frequency_interval,
+      c.private_to_user_id,
+      MIN(ca.due_date) FILTER (WHERE ca.status = 'pending') as next_due_date
+    FROM chores c
+    LEFT JOIN rooms r ON c.room_id = r.id
+    LEFT JOIN chore_assignments ca ON ca.chore_id = c.id
+    WHERE c.household_id = ${dbUser.active_household_id}
+      AND (c.private_to_user_id IS NULL OR c.private_to_user_id = ${dbUser.id})
+    GROUP BY c.id, r.name, r.icon_name
+    ORDER BY r.name NULLS LAST, c.title
+  `;
+
+  return chores.map((chore) => ({
+    ...chore,
+    is_private: chore.private_to_user_id != null,
+  }));
+}
+
 export async function getFavoriteRoomIds() {
   const dbUser = await getDbUser();
   if (!dbUser?.id) return [];

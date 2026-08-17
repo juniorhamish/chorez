@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Sparkles,
   Undo2,
+  ClipboardList,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/app/dashboard/components/dashboard-ui-utils";
@@ -36,6 +37,7 @@ interface DashboardHeaderProps {
   handleRefresh: () => Promise<void>;
   openProfileSettings: () => void;
   openAddTask: () => void;
+  openTaskLibrary: () => void;
   openInviteMember: () => void;
   openManageHousehold: () => void;
   isHouseholdAdmin: boolean;
@@ -62,6 +64,7 @@ export default function DashboardHeader({
   handleRefresh,
   openProfileSettings,
   openAddTask,
+  openTaskLibrary,
   openInviteMember,
   openManageHousehold,
   isHouseholdAdmin,
@@ -162,6 +165,14 @@ export default function DashboardHeader({
             className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
           >
             <Settings size={18} />
+          </button>
+          <button
+            onClick={openTaskLibrary}
+            aria-label="Task Library"
+            title="Task Library"
+            className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+          >
+            <ClipboardList size={18} />
           </button>
           <a
             href="/auth/logout"

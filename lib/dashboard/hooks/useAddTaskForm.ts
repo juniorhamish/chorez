@@ -14,9 +14,9 @@ export function useAddTaskForm(selectableRooms: Room[]) {
   const [newTaskIsPrivate, setNewTaskIsPrivate] = useState(false);
   const [isAddingTask, setIsAddingTask] = useState(false);
 
-  const openAddTask = () => {
+  const openAddTask = (preselectedRoomId?: string) => {
     setNewTaskTitle("");
-    setNewTaskRoomId(selectableRooms[0]?.id ?? "");
+    setNewTaskRoomId(preselectedRoomId ?? selectableRooms[0]?.id ?? "");
     setNewTaskDuration("");
     setNewTaskLastCompleted(new Date().toLocaleDateString('en-CA'));
     setNewTaskFrequency('weekly');
