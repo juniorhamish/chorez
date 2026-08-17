@@ -63,9 +63,12 @@ describe("useHelpReport", () => {
 
   it("submits the trimmed message and stores the result on success", async () => {
     submitHelpReportMock.mockResolvedValue({
-      action: "created",
-      issueNumber: 5,
-      issueUrl: "https://github.com/juniorhamish/chorez/issues/5",
+      ok: true,
+      result: {
+        action: "created",
+        issueNumber: 5,
+        issueUrl: "https://github.com/juniorhamish/chorez/issues/5",
+      },
     });
     const { result } = renderHook(() => useHelpReport());
 
@@ -88,7 +91,10 @@ describe("useHelpReport", () => {
   });
 
   it("stores an error message when submission fails", async () => {
-    submitHelpReportMock.mockRejectedValue(new Error("This doesn't look like a genuine issue report."));
+    submitHelpReportMock.mockResolvedValue({
+      ok: false,
+      error: "This doesn't look like a genuine issue report.",
+    });
     const { result } = renderHook(() => useHelpReport());
 
     act(() => {
@@ -123,7 +129,7 @@ describe("useHelpReport", () => {
     await waitFor(() => expect(result.current.isSubmittingReport).toBe(true));
 
     await act(async () => {
-      resolveSubmit({ action: "created", issueNumber: 1, issueUrl: "https://example.com" });
+      resolveSubmit({ ok: true, result: { action: "created", issueNumber: 1, issueUrl: "https://example.com" } });
     });
 
     expect(result.current.isSubmittingReport).toBe(false);

@@ -52,25 +52,33 @@ beforeEach(() => {
 });
 
 describe("submitHelpReport - authentication and validation", () => {
-  it("throws when there is no authenticated user", async () => {
+  it("returns a friendly error when there is no authenticated user", async () => {
     getDbUserMock.mockResolvedValue(null);
-    await expect(submitHelpReport(VALID_MESSAGE)).rejects.toThrow("Not authenticated");
+    const outcome = await submitHelpReport(VALID_MESSAGE);
+
+    expect(outcome).toEqual({ ok: false, error: expect.stringMatching(/signed in/) });
   });
 
   it("rejects a message that's too short", async () => {
-    await expect(submitHelpReport("too short")).rejects.toThrow(/more detail/);
+    const outcome = await submitHelpReport("too short");
+
+    expect(outcome).toEqual({ ok: false, error: expect.stringMatching(/more detail/) });
   });
 
   it("rejects a message that's too long", async () => {
-    await expect(submitHelpReport("a".repeat(2001))).rejects.toThrow(/under 2000 characters/);
+    const outcome = await submitHelpReport("a".repeat(2001));
+
+    expect(outcome).toEqual({ ok: false, error: expect.stringMatching(/under 2000 characters/) });
   });
 });
 
 describe("submitHelpReport - rate limiting", () => {
-  it("throws when the user has already submitted a report within the rate-limit window", async () => {
+  it("returns an error when the user has already submitted a report within the rate-limit window", async () => {
     sqlMock.mockResolvedValueOnce([{ count: 1 }]);
 
-    await expect(submitHelpReport(VALID_MESSAGE)).rejects.toThrow(/already submitted a report recently/);
+    const outcome = await submitHelpReport(VALID_MESSAGE);
+
+    expect(outcome).toEqual({ ok: false, error: expect.stringMatching(/already submitted a report recently/) });
     expect(screenFeedbackReportMock).not.toHaveBeenCalled();
   });
 
@@ -82,7 +90,7 @@ describe("submitHelpReport - rate limiting", () => {
 });
 
 describe("submitHelpReport - AI screening", () => {
-  it("throws with the AI's reason when the report isn't coherent", async () => {
+  it("returns the AI's reason when the report isn't coherent", async () => {
     screenFeedbackReportMock.mockResolvedValueOnce({
       isCoherent: false,
       reason: "This looks like gibberish.",
@@ -90,7 +98,9 @@ describe("submitHelpReport - AI screening", () => {
       duplicateIssueNumber: null,
     });
 
-    await expect(submitHelpReport(VALID_MESSAGE)).rejects.toThrow("This looks like gibberish.");
+    const outcome = await submitHelpReport(VALID_MESSAGE);
+
+    expect(outcome).toEqual({ ok: false, error: "This looks like gibberish." });
     expect(createIssueMock).not.toHaveBeenCalled();
     expect(commentOnIssueMock).not.toHaveBeenCalled();
   });
@@ -98,23 +108,59 @@ describe("submitHelpReport - AI screening", () => {
   it("still screens the report even if the GitHub search for candidates fails", async () => {
     searchOpenIssuesMock.mockRejectedValueOnce(new Error("network error"));
 
-    const result = await submitHelpReport(VALID_MESSAGE);
+    const outcome = await submitHelpReport(VALID_MESSAGE);
 
     expect(screenFeedbackReportMock).toHaveBeenCalledWith(VALID_MESSAGE, []);
-    expect(result.action).toBe("created");
+    expect(outcome.ok).toBe(true);
+    expect(outcome.ok && outcome.result.action).toBe("created");
+  });
+
+  it("translates an AI screening failure into a friendly error instead of the raw error", async () => {
+    screenFeedbackReportMock.mockRejectedValueOnce(new Error("Gemini API request failed (500): internal error"));
+
+    const outcome = await submitHelpReport(VALID_MESSAGE);
+
+    expect(outcome).toEqual({ ok: false, error: expect.stringMatching(/try again in a moment/) });
   });
 });
 
 describe("submitHelpReport - GitHub issue creation", () => {
+  it("translates a GitHub API failure into a friendly error instead of the raw error", async () => {
+    createIssueMock.mockRejectedValueOnce(new Error("Failed to create GitHub issue (422): validation failed"));
+
+    const outcome = await submitHelpReport(VALID_MESSAGE);
+
+    expect(outcome).toEqual({ ok: false, error: expect.stringMatching(/try again later/) });
+  });
+
+  it("still returns the result even if recording the report afterwards fails", async () => {
+    sqlMock.mockResolvedValueOnce([{ count: 0 }]); // rate-limit SELECT succeeds
+    sqlMock.mockRejectedValueOnce(new Error("connection lost")); // INSERT fails
+
+    const outcome = await submitHelpReport(VALID_MESSAGE);
+
+    expect(outcome).toEqual({
+      ok: true,
+      result: {
+        action: "created",
+        issueNumber: 5,
+        issueUrl: "https://github.com/juniorhamish/chorez/issues/5",
+      },
+    });
+  });
+
   it("creates a new issue when there is no duplicate, and records the report", async () => {
-    const result = await submitHelpReport(VALID_MESSAGE);
+    const outcome = await submitHelpReport(VALID_MESSAGE);
 
     expect(createIssueMock).toHaveBeenCalledWith("App crashes on task completion", expect.stringContaining(VALID_MESSAGE));
     expect(commentOnIssueMock).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      action: "created",
-      issueNumber: 5,
-      issueUrl: "https://github.com/juniorhamish/chorez/issues/5",
+    expect(outcome).toEqual({
+      ok: true,
+      result: {
+        action: "created",
+        issueNumber: 5,
+        issueUrl: "https://github.com/juniorhamish/chorez/issues/5",
+      },
     });
 
     // The INSERT into feedback_reports is the 2nd sql call (after the
@@ -139,14 +185,28 @@ describe("submitHelpReport - GitHub duplicate handling", () => {
       duplicateIssueNumber: 12,
     });
 
-    const result = await submitHelpReport(VALID_MESSAGE);
+    const outcome = await submitHelpReport(VALID_MESSAGE);
 
     expect(commentOnIssueMock).toHaveBeenCalledWith(12, expect.stringContaining(VALID_MESSAGE));
     expect(createIssueMock).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      action: "commented",
-      issueNumber: 12,
-      issueUrl: "https://github.com/juniorhamish/chorez/issues/12",
+    expect(outcome).toEqual({
+      ok: true,
+      result: {
+        action: "commented",
+        issueNumber: 12,
+        issueUrl: "https://github.com/juniorhamish/chorez/issues/12",
+      },
     });
+  });
+});
+
+describe("submitHelpReport - unexpected failures", () => {
+  it("never throws, even when something unexpected blows up, and returns a friendly error instead", async () => {
+    getDbUserMock.mockRejectedValue(new Error("Minified React error #418; visit https://react.dev/errors/418"));
+
+    const outcome = await submitHelpReport(VALID_MESSAGE);
+
+    expect(outcome).toEqual({ ok: false, error: expect.any(String) });
+    expect(outcome.ok && "result" in outcome).toBe(false);
   });
 });

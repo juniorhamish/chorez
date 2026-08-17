@@ -130,6 +130,8 @@ The flow, end to end:
 4. **AI screening** (`lib/feedback-screening.ts`, via the same Gemini API used by the schedule optimiser) — checks that the report is a genuine, coherent English sentence describing a real problem or suggestion (rejecting gibberish/spam/keyboard-mashing with a friendly error instead of submitting it), drafts a short issue title, and judges whether it's a semantic duplicate of one of the candidate issues found above.
 5. **GitHub call** — if a duplicate is found, the report is posted as a comment on that issue; otherwise a brand-new issue is opened. Either way it's authored by the service account, never the reporting user.
 
+`submitHelpReport` never throws: every expected failure above (not signed in, validation, rate limit, AI rejection) and any unexpected internal error are all returned as a plain `{ ok: false, error }` value rather than a thrown exception, and `useHelpReport` reads that directly. This follows Next.js's own guidance to model expected Server Action errors as return values instead of relying on `throw`/`try`/`catch` — errors thrown across the Server Action boundary are unreliable to surface as clean text in production (e.g. they can end up rendered as a raw, minified React error) instead of the intended friendly message.
+
 ### Configuration
 
 ```env
@@ -146,3 +148,7 @@ To set this up:
 3. Set `GITHUB_TOKEN` to that token and `GITHUB_REPO` to the `owner/repo` of the repository issues should be raised in.
 
 `GEMINI_API_KEY` (see above) is also required, since the screening step reuses the existing Gemini integration.
+
+## Error Boundaries
+
+`app/error.tsx` and `app/global-error.tsx` are React error boundaries (Next.js's `error.js`/`global-error.js` file conventions) that catch any uncaught rendering exception the app doesn't already handle. Without them, an unexpected error in production has nowhere to be caught and Next.js falls back to its raw, unstyled crash screen (which can show up as a cryptic "Minified React error" message); with them, the user instead sees a friendly "Something went wrong" screen with a **Try again** button.

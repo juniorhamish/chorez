@@ -29,10 +29,17 @@ export function useHelpReport() {
     setIsSubmittingReport(true);
     setReportError(null);
     try {
-      const result = await submitHelpReport(trimmed);
-      setReportResult(result);
-    } catch (error) {
-      setReportError(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+      const outcome = await submitHelpReport(trimmed);
+      if (outcome.ok) {
+        setReportResult(outcome.result);
+      } else {
+        setReportError(outcome.error);
+      }
+    } catch {
+      // Should be unreachable: submitHelpReport models all expected/unexpected
+      // failures as a return value rather than throwing, precisely so this
+      // catch is never the thing rendering a message to the user.
+      setReportError("Something went wrong. Please try again.");
     } finally {
       setIsSubmittingReport(false);
     }
