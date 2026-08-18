@@ -17,19 +17,33 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Extra safety net: never run this against the production branch, no
+          # matter what triggered the workflow or what the API returns.
+          if [ "${GIT_BRANCH}" = "main" ]; then
+            echo "Refusing to clean up deployments for the production branch 'main'; aborting."
+            exit 1
+          fi
+
           TEAM_QS=""
           if [ -n "${VERCEL_ORG_ID}" ]; then
             TEAM_QS="&teamId=${VERCEL_ORG_ID}"
           fi
 
           echo "Looking up Vercel deployments for branch '${GIT_BRANCH}'..."
-          DEPLOYMENT_IDS=$(curl -sf \
+          # NOTE: the correct Vercel API filter param is "branch" (NOT "gitBranch").
+          # Using an unrecognized param name causes Vercel to silently ignore the
+          # filter and return EVERY deployment for the project (production included),
+          # which previously led to production being deleted. "target=preview" is
+          # kept as a second, independent safety net so production can never match
+          # even if the branch filter alone were ever wrong again.
+          RESPONSE=$(curl -sf \
             -H "Authorization: Bearer ${VERCEL_TOKEN}" \
-            "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&gitBranch=${GIT_BRANCH}&limit=100${TEAM_QS}" \
-            | jq -r '.deployments[].uid')
+            "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&branch=${GIT_BRANCH}&target=preview&limit=100${TEAM_QS}")
+
+          DEPLOYMENT_IDS=$(echo "${RESPONSE}" | jq -r '.deployments[] | select(.target != "production") | .uid')
 
           if [ -z "${DEPLOYMENT_IDS}" ]; then
-            echo "No Vercel deployments found for branch '${GIT_BRANCH}'; nothing to delete."
+            echo "No Vercel preview deployments found for branch '${GIT_BRANCH}'; nothing to delete."
             exit 0
           fi
 
