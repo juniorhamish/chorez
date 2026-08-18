@@ -1,0 +1,49 @@
+name: PR Database Migration Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# Ensures only the latest push on a PR runs, avoiding overlapping branch operations on the same
+# per-PR Neon branch.
+concurrency:
+  group: pr-db-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create Neon branch
+        id: create_neon_branch
+        uses: neondatabase/create-branch-action@v5
+        with:
+          project_id: weathered-fire-58402851
+          branch_name: preview-ci/pr-${{ github.event.pull_request.number }}
+          parent_branch: main
+          api_key: ${{ secrets.NEON_API_KEY }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run migrations against the Neon branch
+        run: npm run db:migrate
+        env:
+          DATABASE_URL_UNPOOLED: ${{ steps.create_neon_branch.outputs.db_url }}
+
+      - name: Delete Neon branch
+        if: always()
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: weathered-fire-58402851
+          branch: preview-ci/pr-${{ github.event.pull_request.number }}
+          api_key: ${{ secrets.NEON_API_KEY }}

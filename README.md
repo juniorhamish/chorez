@@ -149,6 +149,35 @@ To set this up:
 
 `GEMINI_API_KEY` (see above) is also required, since the screening step reuses the existing Gemini integration.
 
+## Preview Deployments & Database Branching
+
+Every pull request against this repo gets its own isolated preview: a Vercel Preview Deployment wired up to a Neon Postgres branch that's a copy-on-write clone of production. This means a reviewer can log in to the preview with their real chorez account and see their real households/chores, but any schema changes or test data written while reviewing the PR live only on that branch's deltas — production is never touched, and the branch is deleted once the PR closes.
+
+### One-time setup (dashboard, human-only)
+
+This is performed once by someone with Vercel/Neon account access, and is **not** part of the repo's code:
+
+1. In the Vercel project's dashboard, go to **Storage → Marketplace → Neon**.
+2. Choose the **Neon-Managed (Connectable Account)** integration (not "Vercel-Managed", which would provision a brand-new Neon org) and link it to this project's existing Neon project.
+3. Enable **Preview Branching** and **Automatically delete obsolete branches** for the connected Vercel project.
+
+Once installed, Neon automatically creates a copy-on-write branch for every Vercel preview deployment and injects `DATABASE_URL`/`DATABASE_URL_UNPOOLED` into that deployment's environment — no webhook code required in this repo.
+
+### Per-PR lifecycle
+
+1. **PR opened/updated** → Vercel builds a Preview Deployment; Neon creates (or reuses) a preview branch cloned from production.
+2. **Build time** → `vercel.json`'s `buildCommand` runs `npm run db:migrate` (`scripts/run-migrations.ts`) before `next build`. This applies any `migrations/*.sql` files not yet recorded in the `schema_migrations` table on that branch — since the branch is a copy-on-write clone, it already has production's ledger rows, so only migrations added by the PR itself actually execute.
+3. **GitHub Actions safety net** (`.github/workflows/pr-db-check.yml`) independently creates a short-lived Neon branch, runs the same migration runner against it, and reports pass/fail as a PR check — so a broken migration is caught even if nobody opens the preview URL.
+4. **PR closed/merged** → the Neon integration automatically deletes the preview branch (and the CI workflow always deletes its own throwaway branch, even on failure), discarding any data or schema changes made during review.
+
+### Configuration
+
+```env
+# NEON_API_KEY is only needed for CI (pr-db-check.yml); Vercel deployments get
+# DATABASE_URL/DATABASE_URL_UNPOOLED injected automatically by the Neon integration above.
+NEON_API_KEY=<Neon personal or org API key, set as a GitHub Actions repo secret>
+```
+
 ## Error Boundaries
 
 `app/error.tsx` and `app/global-error.tsx` are React error boundaries (Next.js's `error.js`/`global-error.js` file conventions) that catch any uncaught rendering exception the app doesn't already handle. Without them, an unexpected error in production has nowhere to be caught and Next.js falls back to its raw, unstyled crash screen (which can show up as a cryptic "Minified React error" message); with them, the user instead sees a friendly "Something went wrong" screen with a **Try again** button.

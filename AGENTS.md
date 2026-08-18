@@ -26,7 +26,7 @@ Chorez is a mobile-first household chore tracker: a Next.js 16 (App Router) app 
 - `lib/gemini.ts` — thin `fetch`-based wrapper around the Gemini REST API (no SDK dependency, deliberately). Builds the prompt + structured-output JSON schema for the weekly optimiser; used by `lib/schedule-optimization.ts`.
 - `lib/dashboard/` — `types.ts` (shared dashboard domain types) and `hooks/` (see above); each hook has a co-located `*.test.ts`.
 - `lib/db.ts` — the single Neon `sql` client (`@neondatabase/serverless`), created from `DATABASE_URL`. Always mock this in tests (`vi.mock("@/lib/db", ...)`) — never hit a real database from a unit test.
-- `migrations/*.sql` — sequentially numbered (`0001_...` → `0009_...`), forward-only SQL migrations; there is no migration runner/ORM. Follow `db-agent`'s conventions (below) for new ones, including RLS policies.
+- `migrations/*.sql` — sequentially numbered (`0001_...` → `0011_...`), forward-only SQL migrations; there is no ORM. `scripts/run-migrations.ts` applies pending files to any branch (tracked via the `schema_migrations` table) and runs on every Vercel build and PR check — see the README's "Preview Deployments & Database Branching" section for the full per-PR lifecycle, read it directly rather than duplicating it here. Follow `db-agent`'s conventions (below) for new migration files, including RLS policies.
 
 ## Domain model (see `migrations/0001_initial_schema.sql` for full DDL)
 
