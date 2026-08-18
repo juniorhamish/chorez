@@ -126,9 +126,15 @@ export default function CompleteTaskModal({
                 rows={3}
                 value={completionNotes}
                 onChange={(e) => setCompletionNotes(e.target.value)}
-                className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold transition-all resize-none"
+                className="peer w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold transition-all resize-none"
               />
-              <MessageSquare size={20} className="absolute right-5 top-5 text-indigo-200" />
+              <MessageSquare 
+                size={20} 
+                className={cn(
+                  "absolute right-5 top-5 text-indigo-200 transition-opacity peer-focus:opacity-0 pointer-events-none",
+                  completionNotes.length > 0 && "opacity-0"
+                )} 
+              />
             </div>
           </div>
 
