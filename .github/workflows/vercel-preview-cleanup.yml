@@ -1,0 +1,42 @@
+name: Vercel Preview Deployment Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  delete-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete Vercel preview deployments for this branch
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          GIT_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+
+          TEAM_QS=""
+          if [ -n "${VERCEL_ORG_ID}" ]; then
+            TEAM_QS="&teamId=${VERCEL_ORG_ID}"
+          fi
+
+          echo "Looking up Vercel deployments for branch '${GIT_BRANCH}'..."
+          DEPLOYMENT_IDS=$(curl -sf \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&gitBranch=${GIT_BRANCH}&limit=100${TEAM_QS}" \
+            | jq -r '.deployments[].uid')
+
+          if [ -z "${DEPLOYMENT_IDS}" ]; then
+            echo "No Vercel deployments found for branch '${GIT_BRANCH}'; nothing to delete."
+            exit 0
+          fi
+
+          for id in ${DEPLOYMENT_IDS}; do
+            echo "Deleting Vercel deployment ${id}..."
+            curl -sf -X DELETE \
+              -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+              "https://api.vercel.com/v13/deployments/${id}?${TEAM_QS#&}" \
+              || echo "Warning: failed to delete deployment ${id} (it may already be gone)."
+          done

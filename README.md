@@ -168,7 +168,7 @@ Once installed, Neon automatically creates a copy-on-write branch for every Verc
 1. **PR opened/updated** → Vercel builds a Preview Deployment; Neon creates (or reuses) a preview branch cloned from production.
 2. **Build time** → `vercel.json`'s `buildCommand` runs `npm run db:migrate` (`scripts/run-migrations.ts`) before `next build`. This applies any `migrations/*.sql` files not yet recorded in the `schema_migrations` table on that branch — since the branch is a copy-on-write clone, it already has production's ledger rows, so only migrations added by the PR itself actually execute.
 3. **GitHub Actions safety net** (`.github/workflows/pr-db-check.yml`) independently creates a short-lived Neon branch, runs the same migration runner against it, and reports pass/fail as a PR check — so a broken migration is caught even if nobody opens the preview URL.
-4. **PR closed/merged** → the Neon integration automatically deletes the preview branch (and the CI workflow always deletes its own throwaway branch, even on failure), discarding any data or schema changes made during review.
+4. **PR closed (merged or not)** → the Neon integration automatically deletes the preview branch (and the CI workflow always deletes its own throwaway branch, even on failure), discarding any data or schema changes made during review. Closing the PR — whether merged or simply closed — additionally triggers `.github/workflows/vercel-preview-cleanup.yml`, which explicitly deletes the Vercel preview deployment(s) built for that PR's branch via the Vercel API (Vercel's own deployment retention would otherwise leave it around for a while).
 
 ### Configuration
 
@@ -176,6 +176,12 @@ Once installed, Neon automatically creates a copy-on-write branch for every Verc
 # NEON_API_KEY is only needed for CI (pr-db-check.yml); Vercel deployments get
 # DATABASE_URL/DATABASE_URL_UNPOOLED injected automatically by the Neon integration above.
 NEON_API_KEY=<Neon personal or org API key, set as a GitHub Actions repo secret>
+
+# Only needed for CI (vercel-preview-cleanup.yml), to delete a PR's preview
+# deployment when the PR is closed (merged or not). Set as GitHub Actions repo secrets.
+VERCEL_TOKEN=<Vercel personal or team access token, from https://vercel.com/account/tokens>
+VERCEL_PROJECT_ID=<this project's Vercel project ID, from Project Settings → General>
+VERCEL_ORG_ID=<your Vercel team/org ID; omit the secret entirely if the project is under a personal account>
 ```
 
 ## Error Boundaries
