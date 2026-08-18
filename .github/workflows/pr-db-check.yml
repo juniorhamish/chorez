@@ -23,7 +23,8 @@ jobs:
         with:
           project_id: weathered-fire-58402851
           branch_name: preview-ci/pr-${{ github.event.pull_request.number }}
-          parent_branch: main
+          parent: main
+          username: neondb_owner
           api_key: ${{ secrets.NEON_API_KEY }}
 
       - name: Setup Node.js
