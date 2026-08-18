@@ -1,0 +1,140 @@
+name: Junie Issue to PR
+
+# Runs Junie CLI (https://github.com/JetBrains/junie-github-action) whenever an issue is
+# raised or edited, so it can read the issue (title, description, comments), implement a
+# fix/feature, and open a PR. Once the PR's Vercel preview deployment is ready, its link is
+# posted back as a comment on the issue. If the issue doesn't have enough information to act
+# on, Junie posts clarifying questions instead of opening a PR.
+on:
+  issues:
+    types: [opened, edited]
+
+# Avoid overlapping runs if the same issue is edited again while a previous run is still going.
+concurrency:
+  group: junie-issue-to-pr-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  junie:
+    # Ignore issues opened/edited by bots (e.g. Junie's own follow-up edits) to avoid loops.
+    if: github.event.issue.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    outputs:
+      should_skip: ${{ steps.junie.outputs.should_skip }}
+      pr_url: ${{ steps.junie.outputs.pr_url }}
+      branch_name: ${{ steps.junie.outputs.branch_name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Junie
+        id: junie
+        uses: JetBrains/junie-github-action@v1
+        with:
+          junie_api_key: ${{ secrets.JUNIE_API_KEY }}
+          create_new_branch_for_pr: "true"
+          use_single_comment: "true"
+          prompt: |
+            You are resolving a GitHub issue automatically. Read the issue's title, description,
+            and every existing comment carefully before doing anything else.
+
+            1. Decide whether the issue contains enough information to safely implement a fix
+               (for a bug report) or a new feature (for a feature request). "Enough information"
+               means you can identify the affected area of the codebase and a concrete, testable
+               definition of done.
+            2. If it does NOT contain enough information, do not change any code and do not open
+               a pull request. Instead, post one comment on the issue asking specific, focused
+               clarifying questions about exactly what's missing (e.g. reproduction steps,
+               expected vs. actual behavior, affected screen/flow, acceptance criteria).
+            3. If it DOES contain enough information:
+               - Follow this repository's AGENTS.md codebase map, in particular the "Which skill
+                 or agent to reach for" table, to decide which of the repo's skills
+                 (.junie/skills/*) or sub-agents (.junie/agents/*) to use for the relevant part of
+                 the change — for example, delegate schema/migration/RLS work to the `db-agent`
+                 sub-agent, and UI/component work to the `ux-designer` sub-agent or the
+                 `ui-generator` skill.
+               - IMPORTANT — schema changes in this automated mode: if the change requires a
+                 database migration, the `db-agent` sub-agent (and you, if handling it directly)
+                 must only add the new `migrations/*.sql` file(s) to this PR — never apply them to
+                 the persistent `dev` Neon branch, and never run `npm run db:migrate` (or any
+                 equivalent) against `dev`/`main` from this workflow. The only place schema
+                 changes get applied is this PR's own Vercel Preview Deployment, whose build
+                 already runs the migration runner against its own dedicated, disposable Neon
+                 branch (see README.md's "Preview Deployments & Database Branching"). Optional,
+                 temporary Neon branches used purely to sanity-check migration SQL before opening
+                 the PR are fine, as long as they're deleted afterwards.
+               - Implement the minimal, correct change: a bug fix for bug reports, or the
+                 requested functionality for feature requests.
+               - Add or update tests following this repo's existing Vitest conventions
+                 (co-located `*.test.ts`/`*.test.tsx` files) whenever the change touches testable
+                 logic.
+               - Make sure the project builds and all relevant tests pass before opening the pull
+                 request.
+               - Open a pull request with a clear title and a description summarizing the change,
+                 and include "Fixes #${{ github.event.issue.number }}" in the PR description so
+                 the issue is automatically linked and closed once the PR is merged.
+
+      - name: Report skipped run
+        if: steps.junie.outputs.should_skip == 'true'
+        run: echo "Junie skipped this issue (no write permissions or no actionable trigger)."
+
+  comment-preview-link:
+    needs: junie
+    if: needs.junie.outputs.should_skip != 'true' && needs.junie.outputs.pr_url != ''
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BRANCH: ${{ needs.junie.outputs.branch_name }}
+    steps:
+      - name: Wait for the Vercel preview deployment
+        id: vercel
+        run: |
+          set -euo pipefail
+
+          PREVIEW_URL=""
+          for attempt in $(seq 1 30); do
+            DEPLOYMENT_ID=$(gh api "repos/${{ github.repository }}/deployments?ref=${BRANCH}&per_page=1" --jq '.[0].id' 2>/dev/null || true)
+
+            if [ -n "${DEPLOYMENT_ID}" ] && [ "${DEPLOYMENT_ID}" != "null" ]; then
+              STATUSES=$(gh api "repos/${{ github.repository }}/deployments/${DEPLOYMENT_ID}/statuses" 2>/dev/null || echo "[]")
+              PREVIEW_URL=$(echo "${STATUSES}" | jq -r '[.[] | select(.state == "success")][0].environment_url // empty')
+
+              if [ -n "${PREVIEW_URL}" ]; then
+                echo "Found ready Vercel preview deployment: ${PREVIEW_URL}"
+                break
+              fi
+
+              FAILED_STATE=$(echo "${STATUSES}" | jq -r '[.[] | select(.state == "failure" or .state == "error")][0].state // empty')
+              if [ -n "${FAILED_STATE}" ]; then
+                echo "Vercel deployment for branch '${BRANCH}' reported state '${FAILED_STATE}'; giving up."
+                break
+              fi
+            fi
+
+            echo "Preview deployment not ready yet (attempt ${attempt}/30); waiting 20s..."
+            sleep 20
+          done
+
+          echo "preview_url=${PREVIEW_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on the issue with the PR and preview link
+        if: steps.vercel.outputs.preview_url != ''
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "Junie opened ${{ needs.junie.outputs.pr_url }} with a proposed change, and its Vercel preview deployment is ready: ${{ steps.vercel.outputs.preview_url }}"
+
+      - name: Comment on the issue when the preview isn't ready yet
+        if: steps.vercel.outputs.preview_url == ''
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "Junie opened ${{ needs.junie.outputs.pr_url }} with a proposed change. Its Vercel preview deployment wasn't ready within the wait time — check the PR directly for the preview link once the build finishes."

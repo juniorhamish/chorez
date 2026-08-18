@@ -184,6 +184,27 @@ VERCEL_PROJECT_ID=<this project's Vercel project ID, from Project Settings → G
 VERCEL_ORG_ID=<your Vercel team/org ID; omit the secret entirely if the project is under a personal account>
 ```
 
+## Automated Issue Triage (Junie GitHub Action)
+
+`.github/workflows/junie-issue-to-pr.yml` runs the official [Junie GitHub Action](https://github.com/JetBrains/junie-github-action) every time an issue is opened or edited (excluding issues opened/edited by bots, to avoid loops). Junie reads the issue's title, description, and all existing comments, then:
+
+- If the issue has enough information to act on, it follows this repo's `AGENTS.md` codebase map (including which `.junie/skills/*` skill or `.junie/agents/*` sub-agent to reach for) and opens a pull request implementing the fix or feature, with `Fixes #<issue number>` in its description so the issue auto-closes on merge.
+- If the issue is missing key details (e.g. reproduction steps, expected behavior, acceptance criteria), Junie posts a comment on the issue asking clarifying questions instead of opening a PR.
+
+If the change requires a database migration, this workflow only ever adds the new `migrations/*.sql` file(s) to the PR — it never applies them to the persistent `dev` Neon branch. Schema changes are applied exclusively as part of the PR's own Vercel Preview Deployment build (see "Preview Deployments & Database Branching" above), which already runs the migration runner against that preview's dedicated, disposable Neon branch. The `db-agent` sub-agent (`.junie/agents/db-agent.md`) enforces this restriction whenever it's invoked from this workflow.
+
+Once a PR is opened, a second job in the same workflow polls the GitHub Deployments API for the PR branch's Vercel preview deployment (see "Preview Deployments & Database Branching" below) and posts a comment on the original issue linking both the PR and its live preview URL as soon as the deployment succeeds.
+
+### Configuration
+
+```env
+# Required. JetBrains Junie API key, generated at https://junie.jetbrains.com/cli.
+# Set as a GitHub Actions repo secret.
+JUNIE_API_KEY=<Junie API key>
+```
+
+No other secrets are required: the workflow uses the default `GITHUB_TOKEN` to open PRs, comment on issues, and read deployment statuses. Note that PRs opened using the default `GITHUB_TOKEN` don't themselves trigger other `pull_request`-scoped workflows (e.g. `pr-db-check.yml`) due to GitHub Actions' recursive-workflow prevention — the Vercel/Neon preview pipeline still runs regardless, since it's driven by Vercel's own GitHub integration rather than a workflow.
+
 ## Error Boundaries
 
 `app/error.tsx` and `app/global-error.tsx` are React error boundaries (Next.js's `error.js`/`global-error.js` file conventions) that catch any uncaught rendering exception the app doesn't already handle. Without them, an unexpected error in production has nowhere to be caught and Next.js falls back to its raw, unstyled crash screen (which can show up as a cryptic "Minified React error" message); with them, the user instead sees a friendly "Something went wrong" screen with a **Try again** button.

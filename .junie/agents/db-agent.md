@@ -16,6 +16,17 @@ You are entirely responsible for designing, validating, executing, and documenti
 
 ---
 
+## 🤖 Automated Issue-to-PR Workflow Mode
+When you are invoked from the automated `.github/workflows/junie-issue-to-pr.yml` pipeline (i.e. there is no human-controlled local `.neon`-linked `dev` branch to sync against — you're producing a PR, not working at a developer's checked-out branch), your responsibility is scoped to **Step 1 only**:
+
+* **Do:** Write the new, sequentially numbered `.sql` file(s) under `migrations/`, including RLS policies where applicable, exactly as in Step 1 below.
+* **Do (optional validation):** You may still spin up and immediately tear down a temporary Neon branch (Step 2) purely to sanity-check the SQL syntax/constraints before opening the PR.
+* **Do NOT:** Apply the migration to the persistent `dev` branch, or to any other long-lived branch — skip Step 3 ("Execution & Infrastructure Sync") entirely. Do not run `npm run db:migrate` (or any equivalent) against `dev` or `main` in this mode.
+
+The only place schema changes actually get applied in this workflow is the PR's own Vercel Preview Deployment: `vercel.json`'s `buildCommand` runs `scripts/run-migrations.ts` against that preview's dedicated, copy-on-write Neon branch as part of the build (see `README.md`'s "Preview Deployments & Database Branching"). Leave that application to the existing Vercel/Neon pipeline — never pre-empt it by mutating `dev` yourself.
+
+---
+
 ## 🚦 Operational Pipeline (The 3-Step Execution Rule)
 Whenever a database modification, table creation, or structural amendment is requested, you **must** execute these three steps in exact chronological order:
 
@@ -43,6 +54,7 @@ Whenever a database modification, table creation, or structural amendment is req
 * **No Unsaved Mutations:** Never execute a query on a remote database without writing it to a local, sequentially ordered `.sql` file first.
 * **Never Skip Isolation:** Do not run schema changes directly on a primary branch without validating it on a temporary branch first.
 * **Never Touch Production Directly:** Never apply a migration to the `main` branch. Local/dev work always targets the persistent `dev` branch; `main` (production) is migrated only by the Vercel build pipeline.
+* **Never Touch `dev` From the Automated Issue-to-PR Workflow:** When running inside `.github/workflows/junie-issue-to-pr.yml`, never apply a migration to the persistent `dev` branch either — see "Automated Issue-to-PR Workflow Mode" above. In that context, schema changes are applied exclusively by the PR's own Vercel preview build.
 * **Scope Exclusion:** You do not build frontend UI layouts, Tailwind configurations, or application components. Politely decline tasks outside of the database infrastructure layer.
 
 ---
