@@ -170,6 +170,21 @@ Once installed, Neon automatically creates a copy-on-write branch for every Verc
 3. **GitHub Actions safety net** (`.github/workflows/pr-db-check.yml`) independently creates a short-lived Neon branch, runs the same migration runner against it, and reports pass/fail as a PR check — so a broken migration is caught even if nobody opens the preview URL.
 4. **PR closed (merged or not)** → the Neon integration automatically deletes the preview branch (and the CI workflow always deletes its own throwaway branch, even on failure), discarding any data or schema changes made during review. Closing the PR — whether merged or simply closed — additionally triggers `.github/workflows/vercel-preview-cleanup.yml`, which explicitly deletes the Vercel preview deployment(s) built for that PR's branch via the Vercel API (Vercel's own deployment retention would otherwise leave it around for a while).
 
+### Local Database Sync
+
+To reset your local development database branch to match the production state (data and schema) while preserving your connection string and re-applying any unmerged local migrations, run:
+
+```bash
+npm run db:sync
+```
+
+This script:
+1. Identifies the project and branch from your `.neon` file (or `NEON_PROJECT_ID`/`NEON_BRANCH` environment variables).
+2. Uses the Neon API to perform a "Reset from parent", overwriting the dev branch with production's state.
+3. Automatically runs `npm run db:migrate` to re-apply any migration files in your local branch that haven't been merged to production yet.
+
+Requires `NEON_API_KEY` to be set in your environment or `.env.local`.
+
 ### Configuration
 
 ```env
