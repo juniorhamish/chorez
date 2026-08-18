@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import {
   Plus,
   User as UserIcon,
@@ -16,6 +16,7 @@ import {
   Undo2,
   ClipboardList,
   LifeBuoy,
+  MoreHorizontal,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/app/dashboard/components/dashboard-ui-utils";
@@ -76,10 +77,12 @@ export default function DashboardHeader({
   onViewLastOptimization,
   openHelp,
 }: Readonly<DashboardHeaderProps>) {
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+
   return (
     <header className="px-6 pt-10 pb-6 bg-white/50 backdrop-blur-md sticky top-0 z-10 border-b border-indigo-50">
-      <div className="flex justify-between items-start mb-4">
-        <div>
+      <div className="flex justify-between items-start mb-4 gap-4">
+        <div className="flex-1 min-w-0">
           <h1 suppressHydrationWarning className="text-2xl font-bold tracking-tight">
             {greeting}{userName ? `, ${userName}` : ''}! 👋
           </h1>
@@ -151,49 +154,129 @@ export default function DashboardHeader({
             </div>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            aria-label="Refresh Tasks"
-            title="Refresh Tasks"
-            className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw size={18} className={cn(isRefreshing && "animate-spin")} />
-          </button>
-          <button
-            onClick={openProfileSettings}
-            aria-label="Profile Settings"
-            title="Profile Settings"
-            className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-          >
-            <Settings size={18} />
-          </button>
-          <button
-            onClick={openTaskLibrary}
-            aria-label="Task Library"
-            title="Task Library"
-            className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-          >
-            <ClipboardList size={18} />
-          </button>
-          <button
-            onClick={openHelp}
-            aria-label="Help"
-            title="Help"
-            className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-          >
-            <LifeBuoy size={18} />
-          </button>
-          <a
-            href="/auth/logout"
-            aria-label="Log Out"
-            title="Log Out"
-            className="p-2.5 rounded-full text-indigo-300 hover:text-rose-500 hover:bg-rose-50 transition-colors"
-          >
-            <LogOut size={18} />
-          </a>
-          <div aria-hidden="true" className="w-px h-6 bg-indigo-100" />
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+          <div className="hidden sm:flex items-center gap-1.5 sm:gap-3">
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              aria-label="Refresh Tasks"
+              title="Refresh Tasks"
+              className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={18} className={cn(isRefreshing && "animate-spin")} />
+            </button>
+            <button
+              onClick={openProfileSettings}
+              aria-label="Profile Settings"
+              title="Profile Settings"
+              className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+            >
+              <Settings size={18} />
+            </button>
+            <button
+              onClick={openTaskLibrary}
+              aria-label="Task Library"
+              title="Task Library"
+              className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+            >
+              <ClipboardList size={18} />
+            </button>
+            <button
+              onClick={openHelp}
+              aria-label="Help"
+              title="Help"
+              className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+            >
+              <LifeBuoy size={18} />
+            </button>
+            <a
+              href="/auth/logout"
+              aria-label="Log Out"
+              title="Log Out"
+              className="p-2.5 rounded-full text-indigo-300 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+            >
+              <LogOut size={18} />
+            </a>
+          </div>
+
+          <div className="sm:hidden relative">
+            <button
+              onClick={() => setIsMoreMenuOpen((prev) => !prev)}
+              aria-label="More options"
+              className="p-2.5 rounded-full text-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+            >
+              <MoreHorizontal size={20} />
+            </button>
+            <AnimatePresence>
+              {isMoreMenuOpen && (
+                <>
+                  <div
+                    onClick={() => setIsMoreMenuOpen(false)}
+                    className="fixed inset-0 z-20"
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-indigo-50 p-2 z-30"
+                  >
+                    <button
+                      onClick={() => {
+                        handleRefresh();
+                        setIsMoreMenuOpen(false);
+                      }}
+                      disabled={isRefreshing}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-indigo-700 hover:bg-indigo-50 transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw size={18} className={cn(isRefreshing && "animate-spin")} />
+                      <span className="font-bold text-sm">Refresh Tasks</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        openProfileSettings();
+                        setIsMoreMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-indigo-700 hover:bg-indigo-50 transition-colors"
+                    >
+                      <Settings size={18} />
+                      <span className="font-bold text-sm">Profile Settings</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        openTaskLibrary();
+                        setIsMoreMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-indigo-700 hover:bg-indigo-50 transition-colors"
+                    >
+                      <ClipboardList size={18} />
+                      <span className="font-bold text-sm">Task Library</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        openHelp();
+                        setIsMoreMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-indigo-700 hover:bg-indigo-50 transition-colors"
+                    >
+                      <LifeBuoy size={18} />
+                      <span className="font-bold text-sm">Help & Feedback</span>
+                    </button>
+                    <div className="h-px bg-indigo-50 my-1 mx-2" />
+                    <a
+                      href="/auth/logout"
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-rose-600 hover:bg-rose-50 transition-colors"
+                    >
+                      <LogOut size={18} />
+                      <span className="font-bold text-sm">Log Out</span>
+                    </a>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <div aria-hidden="true" className="hidden sm:block w-px h-6 bg-indigo-100" />
           <button
             onClick={openAddTask}
             aria-label="Add Task"
