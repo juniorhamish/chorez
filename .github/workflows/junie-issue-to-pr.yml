@@ -76,9 +76,14 @@ jobs:
                  logic.
                - Make sure the project builds and all relevant tests pass before opening the pull
                  request.
-               - Open a pull request with a clear title and a description summarizing the change,
-                 and include "Fixes #${{ github.event.issue.number }}" in the PR description so
-                 the issue is automatically linked and closed once the PR is merged.
+               - Open a pull request whose title concisely and specifically describes the actual
+                 change made (e.g. "Fix X crashing when Y" or "Add X to Y"), not generic text like
+                 "Fix issue #${{ github.event.issue.number }}" or "Automated fix" — someone
+                 scanning the PR list should understand what changed from the title alone. Put the
+                 note that this was automated by Junie in the PR description instead, along with a
+                 summary of the change, and include "Fixes #${{ github.event.issue.number }}" in
+                 the description so the issue is automatically linked and closed once the PR is
+                 merged.
 
       - name: Report skipped run
         if: steps.junie.outputs.should_skip == 'true'
