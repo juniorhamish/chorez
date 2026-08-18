@@ -189,7 +189,7 @@ export default function ProfileModal({
 
             {appVersion && (
               <p className="text-center text-[10px] font-bold uppercase tracking-widest text-indigo-300">
-                Chorez v{appVersion}
+                Chorez version{appVersion}
               </p>
             )}
           </div>
