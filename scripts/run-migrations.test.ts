@@ -11,11 +11,11 @@ vi.mock("fs", () => ({
 
 const { runMigrations } = await import("./run-migrations");
 
-function makeClient(overrides: Partial<Record<string, unknown[]>> = {}) {
-  const initialLedgerRows: { filename: string }[] = (overrides.ledgerRows as { filename: string }[]) ?? [];
+function makeClient(overrides: { ledgerRows?: { filename: string }[]; domainTableExists?: boolean } = {}) {
+  const initialLedgerRows: { filename: string }[] = overrides.ledgerRows ?? [];
   const initialLedgerSize = initialLedgerRows.length;
   const ledgerRows: { filename: string }[] = [...initialLedgerRows];
-  const domainTableExists = (overrides.domainTableExists as unknown as boolean) ?? true;
+  const domainTableExists = overrides.domainTableExists ?? true;
 
   const query = vi.fn(async (sql: string, params?: unknown[]) => {
     const text = sql.trim();
@@ -60,7 +60,7 @@ describe("runMigrations bootstrap", () => {
     await runMigrations(client);
 
     const insertCalls = (client.query as unknown as ReturnType<typeof vi.fn>).mock.calls.filter(
-      ([sql]: [string]) => sql.trim().startsWith("INSERT INTO schema_migrations")
+      (call) => (call[0] as string).trim().startsWith("INSERT INTO schema_migrations")
     );
     expect(insertCalls).toHaveLength(2);
     expect(insertCalls[0][1]).toEqual(["0001_initial.sql"]);
@@ -68,7 +68,7 @@ describe("runMigrations bootstrap", () => {
 
     // Bootstrap should not run BEGIN/transactional execution of the migration file SQL.
     const beginCalls = (client.query as unknown as ReturnType<typeof vi.fn>).mock.calls.filter(
-      ([sql]: [string]) => sql.trim() === "BEGIN"
+      (call) => (call[0] as string).trim() === "BEGIN"
     );
     expect(beginCalls).toHaveLength(0);
   });
@@ -80,7 +80,7 @@ describe("runMigrations bootstrap", () => {
     await runMigrations(client);
 
     const beginCalls = (client.query as unknown as ReturnType<typeof vi.fn>).mock.calls.filter(
-      ([sql]: [string]) => sql.trim() === "BEGIN"
+      (call) => (call[0] as string).trim() === "BEGIN"
     );
     expect(beginCalls).toHaveLength(1);
   });
@@ -97,9 +97,9 @@ describe("runMigrations pending application", () => {
     await runMigrations(client);
 
     const insertCalls = (client.query as unknown as ReturnType<typeof vi.fn>).mock.calls.filter(
-      ([sql]: [string]) => sql.trim().startsWith("INSERT INTO schema_migrations")
+      (call) => (call[0] as string).trim().startsWith("INSERT INTO schema_migrations")
     );
-    expect(insertCalls.map((call: [string, unknown[]]) => call[1][0])).toEqual([
+    expect(insertCalls.map((call) => (call[1] as unknown[])[0])).toEqual([
       "0002_second.sql",
       "0003_third.sql",
     ]);
@@ -115,7 +115,7 @@ describe("runMigrations pending application", () => {
     await runMigrations(client);
 
     const insertCalls = (client.query as unknown as ReturnType<typeof vi.fn>).mock.calls.filter(
-      ([sql]: [string]) => sql.trim().startsWith("INSERT INTO schema_migrations")
+      (call) => (call[0] as string).trim().startsWith("INSERT INTO schema_migrations")
     );
     expect(insertCalls).toHaveLength(0);
   });
@@ -142,12 +142,12 @@ describe("runMigrations failure handling", () => {
 
     await expect(runMigrations(client)).rejects.toThrow("syntax error");
 
-    const insertCalls = query.mock.calls.filter(([sql]: [string]) =>
-      sql.trim().startsWith("INSERT INTO schema_migrations")
+    const insertCalls = query.mock.calls.filter((call) =>
+      (call[0] as string).trim().startsWith("INSERT INTO schema_migrations")
     );
     expect(insertCalls).toHaveLength(0);
 
-    const rollbackCalls = query.mock.calls.filter(([sql]: [string]) => sql.trim() === "ROLLBACK");
+    const rollbackCalls = query.mock.calls.filter((call) => (call[0] as string).trim() === "ROLLBACK");
     expect(rollbackCalls).toHaveLength(1);
   });
 });
