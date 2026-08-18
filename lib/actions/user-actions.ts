@@ -313,6 +313,11 @@ export async function getInvitations() {
   `;
 }
 
+export async function getAppVersion(): Promise<string | null> {
+  const result = await sql`SELECT value FROM app_settings WHERE key = 'app_version' LIMIT 1`;
+  return result[0]?.value ?? null;
+}
+
 export async function respondToInvitation(invitationId: string, status: 'accepted' | 'declined') {
   const session = await auth0.getSession();
   if (!session || !session.user.email) throw new Error("Not authenticated");
