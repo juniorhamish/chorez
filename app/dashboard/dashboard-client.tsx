@@ -76,6 +76,7 @@ interface DashboardClientProps {
   initialSelectedDay?: string;
   initialSelectedRoom?: string;
   initialLastOptimizationRun?: ScheduleOptimizationRun | null;
+  initialAppVersion?: string | null;
 }
 
 export default function DashboardClient({
@@ -94,6 +95,7 @@ export default function DashboardClient({
   initialSelectedDay,
   initialSelectedRoom,
   initialLastOptimizationRun,
+  initialAppVersion,
 }: Readonly<DashboardClientProps>) {
   const { user } = useUser();
   const router = useRouter();
@@ -992,6 +994,7 @@ export default function DashboardClient({
             eveningNotificationHour={eveningNotificationHour}
             setEveningNotificationHour={setEveningNotificationHour}
             isSavingProfile={isSavingProfile}
+            appVersion={initialAppVersion}
             onClose={() => setIsProfileOpen(false)}
             onSubmit={handleSaveProfile}
           />

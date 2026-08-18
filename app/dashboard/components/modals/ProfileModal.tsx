@@ -17,6 +17,7 @@ interface ProfileModalProps {
   eveningNotificationHour: number;
   setEveningNotificationHour: (value: number) => void;
   isSavingProfile: boolean;
+  appVersion?: string | null;
   onClose: () => void;
   onSubmit: () => Promise<void>;
 }
@@ -33,6 +34,7 @@ export default function ProfileModal({
   eveningNotificationHour,
   setEveningNotificationHour,
   isSavingProfile,
+  appVersion,
   onClose,
   onSubmit,
 }: Readonly<ProfileModalProps>) {
@@ -184,6 +186,12 @@ export default function ProfileModal({
                 )}
               </button>
             </div>
+
+            {appVersion && (
+              <p className="text-center text-[10px] font-bold uppercase tracking-widest text-indigo-300">
+                Chorez v{appVersion}
+              </p>
+            )}
           </div>
         </div>
       </motion.div>
