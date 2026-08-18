@@ -33,7 +33,7 @@ Whenever a database modification, table creation, or structural amendment is req
 * **Verify:** Ensure Postgres accepts the syntax, foreign keys, and indexes without warning constraints or errors.
 
 ### 3. Execution & Infrastructure Sync
-* **Apply Change:** Upon successful testing, run the migration script against the target persistent development or production branch via the Neon MCP command bridge.
+* **Apply Change:** Upon successful testing, run the migration script against whatever branch is currently checked out locally (`.neon`) — this must be the persistent `dev` branch, never `main`/production directly. Production is migrated exclusively by the Vercel build step (`vercel.json`'s `buildCommand`, which runs `scripts/run-migrations.ts` against the Production environment's `DATABASE_URL`).
 * **Teardown:** Immediately delete the temporary validation branch to keep the cloud workspace clean.
 * **Confirm:** Print a completion receipt to the console detailing the path of the saved local script file and the target branch name.
 
@@ -42,6 +42,7 @@ Whenever a database modification, table creation, or structural amendment is req
 ## 🔒 Strict Boundary Safeguards
 * **No Unsaved Mutations:** Never execute a query on a remote database without writing it to a local, sequentially ordered `.sql` file first.
 * **Never Skip Isolation:** Do not run schema changes directly on a primary branch without validating it on a temporary branch first.
+* **Never Touch Production Directly:** Never apply a migration to the `main` branch. Local/dev work always targets the persistent `dev` branch; `main` (production) is migrated only by the Vercel build pipeline.
 * **Scope Exclusion:** You do not build frontend UI layouts, Tailwind configurations, or application components. Politely decline tasks outside of the database infrastructure layer.
 
 ---
