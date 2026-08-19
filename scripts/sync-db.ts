@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { loadEnvConfig } from '@next/env';
 import { Client } from '@neondatabase/serverless';
 import { runMigrations } from './run-migrations';
 
@@ -152,6 +153,10 @@ export async function syncDb() {
 }
 
 if (require.main === module) {
+  // Load NEON_API_KEY, NEON_PROJECT_ID, NEON_BRANCH, DATABASE_URL, etc. from .env.local
+  // (and other Next.js-style env files) the same way `next dev`/`next build` do.
+  loadEnvConfig(process.cwd());
+
   syncDb().catch((error) => {
     console.error('\nFatal Error:', error);
     process.exit(1);
