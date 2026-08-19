@@ -9,11 +9,13 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:migrate": "tsx scripts/run-migrations.ts"
+    "db:migrate": "tsx scripts/run-migrations.ts",
+    "db:sync": "tsx scripts/sync-db.ts"
   },
   "dependencies": {
     "@auth0/nextjs-auth0": "^4.26.0",
     "@neondatabase/serverless": "^1.1.0",
+    "@next/env": "16.3.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.43.0",
     "lucide-react": "^1.28.0",
