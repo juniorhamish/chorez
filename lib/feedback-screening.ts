@@ -21,7 +21,7 @@ export interface FeedbackScreeningResult {
   duplicateIssueNumber: number | null;
 }
 
-const DEFAULT_MODEL = "gemini-3.6-flash";
+const DEFAULT_MODEL = "gemini-1.5-flash";
 
 function buildResponseSchema() {
   return {
@@ -61,7 +61,7 @@ function buildPrompt(message: string, candidateIssues: FeedbackCandidateIssue[])
           .map((issue) => `- #${issue.number}: "${issue.title}"\n  ${issue.body.slice(0, 300).replace(/\s+/g, " ").trim()}`)
           .join("\n")
       : "(no candidate issues found)";
-  const validNumbers = candidateIssues.map((issue) => `#${issue.number}`).join(", ") || "none";
+  const validNumbers = candidateIssues.map((issue) => issue.number).join(", ") || "none";
 
   return `You are triaging a user-submitted "Report an issue" message from the "Chorez" household chore tracker app, before it is turned into a GitHub issue on the project's repository.
 
@@ -78,7 +78,7 @@ Tasks:
 2. If it is coherent, write a short (at most 80 characters) descriptive title suitable for a GitHub issue.
 3. If it is coherent, decide whether it is a duplicate of one of the candidate issues listed above (matching by meaning, not just exact wording). Only pick a duplicate if you are confident it describes the same underlying problem or request. If none match, or there are no candidates, return null.
 
-Return a JSON object with "isCoherent", "reason" (only if isCoherent is false), "title" (only meaningful if isCoherent is true), and "duplicateIssueNumber" (one of ${validNumbers}, or null).`;
+Return a JSON object with "isCoherent", "reason" (only if isCoherent is false), "title" (only meaningful if isCoherent is true), and "duplicateIssueNumber" (one of the candidate issue numbers [${validNumbers}], or null).`;
 }
 
 export async function screenFeedbackReport(
