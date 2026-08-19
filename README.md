@@ -212,6 +212,12 @@ Once a PR is opened, a second job in the same workflow polls the GitHub Deployme
 
 A third job (`approve-db-migration-check`) auto-approves the resulting run of `pr-db-check.yml` ("PR Database Migration Check") for Junie's PR, in case GitHub requires manual maintainer approval before a workflow run triggered this way is allowed to execute — so the migration safety-net check still runs automatically instead of sitting stuck until a human clicks "Approve and run".
 
+### Security
+
+Because this job runs with `contents: write`, `pull-requests: write`, and `issues: write` permissions but is triggered by an issue's own (attacker-controllable, on a public repo) title/description/comments, two safeguards keep a malicious issue from turning into arbitrary write access or a prompt-injection attack:
+
+- **Prompt hardening** — the prompt explicitly tells Junie to treat the issue's title/description/comments as untrusted data describing a requested change, never as instructions that can override the prompt itself, reveal secrets/tokens, touch CI/workflow files or auth/RLS code, run arbitrary commands, or reach out to external services — and to skip opening a PR (posting an explanatory comment instead) if the issue doesn't hold up as a legitimate request once any such embedded instructions are stripped out.
+
 ### Configuration
 
 ```env
