@@ -4,8 +4,8 @@ import { runMigrations } from "./run-migrations";
 
 const readFileSyncMock = vi.fn();
 vi.mock("fs", () => ({
-  readFileSync: (...args: any[]) => readFileSyncMock(...args),
-  default: { readFileSync: (...args: any[]) => readFileSyncMock(...args) },
+  readFileSync: (...args: unknown[]) => readFileSyncMock(...args),
+  default: { readFileSync: (...args: unknown[]) => readFileSyncMock(...args) },
 }));
 
 // Mock fetch globally
@@ -70,7 +70,7 @@ describe("syncDb", () => {
   it("orchestrates the sync workflow: identify branch -> restore from parent -> wait -> migrate", async () => {
     // We need to mock process.exit and console.log/error to keep test output clean
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
     await syncDb();
 

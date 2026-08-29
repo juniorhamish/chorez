@@ -34,7 +34,7 @@ export async function syncDb() {
       const config = JSON.parse(readFileSync(neonConfigPath, 'utf8'));
       projectId = projectId || config.projectId;
       branchName = branchName || config.branch;
-    } catch (error) {
+    } catch {
       if (!projectId || !branchName) {
         console.error('Error: Could not determine Neon project or branch.');
         console.error('Please ensure a .neon file exists or set NEON_PROJECT_ID and NEON_BRANCH.');
@@ -63,7 +63,9 @@ export async function syncDb() {
   }
 
   const { branches } = await branchesResponse.json();
-  const targetBranch = branches.find((b: any) => b.name === branchName || b.id === branchName);
+  const targetBranch = branches.find(
+    (b: { id: string; name: string; parent_id?: string }) => b.name === branchName || b.id === branchName,
+  );
 
   if (!targetBranch) {
     console.error(`Error: Could not find branch "${branchName}" in Neon project ${projectId}`);
