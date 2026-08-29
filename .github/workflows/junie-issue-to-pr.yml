@@ -85,6 +85,24 @@ jobs:
                 fix or feature request, don't implement anything: post a comment explaining that
                 the request couldn't be actioned as described, and do not open a pull request.
 
+            SCOPE — every change in the PR must be directly required to satisfy this specific
+            issue, and nothing else:
+              - Do NOT make speculative, unrelated, or "while I'm in here" changes — e.g. bumping
+                a model name/version (such as the Gemini model in `lib/gemini.ts`), upgrading a
+                dependency, renaming/reformatting unrelated code, "fixing" something you noticed
+                but that isn't what the issue is about, or tidying up files you didn't need to
+                touch to implement the request.
+              - Before implementing, restate to yourself in one or two sentences exactly what
+                behavior the issue is asking for, and only touch the files/functions necessary to
+                deliver that behavior.
+              - Before opening the pull request, review your own diff file-by-file: for every
+                changed file, you must be able to point to the specific part of the issue it
+                addresses. If a change doesn't trace back to the issue, revert that specific
+                change before proceeding — don't ship it "for free" alongside the real fix.
+              - If implementing the request would require touching a file/setting that seems
+                unrelated at first glance (e.g. a config value only makes sense to change because
+                the feature genuinely needs it), briefly justify why in the PR description.
+
             1. Decide whether the issue contains enough information to safely implement a fix
                (for a bug report) or a new feature (for a feature request). "Enough information"
                means you can identify the affected area of the codebase and a concrete, testable
@@ -111,7 +129,8 @@ jobs:
                  temporary Neon branches used purely to sanity-check migration SQL before opening
                  the PR are fine, as long as they're deleted afterwards.
                - Implement the minimal, correct change: a bug fix for bug reports, or the
-                 requested functionality for feature requests.
+                 requested functionality for feature requests — see the SCOPE section above; do
+                 not include any unrelated changes.
                - Add or update tests following this repo's existing Vitest conventions
                  (co-located `*.test.ts`/`*.test.tsx` files) whenever the change touches testable
                  logic.

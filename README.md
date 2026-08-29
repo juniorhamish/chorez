@@ -214,9 +214,10 @@ A third job (`approve-db-migration-check`) auto-approves the resulting run of `p
 
 ### Security
 
-Because this job runs with `contents: write`, `pull-requests: write`, and `issues: write` permissions but is triggered by an issue's own (attacker-controllable, on a public repo) title/description/comments, two safeguards keep a malicious issue from turning into arbitrary write access or a prompt-injection attack:
+Because this job runs with `contents: write`, `pull-requests: write`, and `issues: write` permissions but is triggered by an issue's own (attacker-controllable, on a public repo) title/description/comments, the following safeguards keep a malicious or over-eager run from turning into arbitrary write access, a prompt-injection attack, or an unrelated/scope-creeping PR:
 
 - **Prompt hardening** — the prompt explicitly tells Junie to treat the issue's title/description/comments as untrusted data describing a requested change, never as instructions that can override the prompt itself, reveal secrets/tokens, touch CI/workflow files or auth/RLS code, run arbitrary commands, or reach out to external services — and to skip opening a PR (posting an explanatory comment instead) if the issue doesn't hold up as a legitimate request once any such embedded instructions are stripped out.
+- **Scope discipline** — the prompt also requires every changed file in the PR to trace back directly to the issue being resolved, explicitly forbidding speculative or "while I'm in here" changes (e.g. bumping the Gemini model version, unrelated dependency bumps, or reformatting untouched code), and requires Junie to review its own diff file-by-file and revert anything that doesn't address the issue before opening the PR.
 
 ### Configuration
 
