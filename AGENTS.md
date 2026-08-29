@@ -54,6 +54,7 @@ Chorez is a mobile-first household chore tracker: a Next.js 16 (App Router) app 
 | React/Next.js performance work (waterfalls, bundle size, re-renders) | **`vercel-react-best-practices`** skill |
 | Writing or reasoning about tests, mocking `lib/db.ts`, coverage | **`vitest`** skill; for a strict test-first workflow use the **`tdd`** skill |
 | Browser-driven debugging/automation (e.g. reproducing a UI bug live) | **`chrome-devtools-cli`** skill |
+| Checking for and applying npm dependency updates, then verifying build/lint/test and a live logged-in browser check | **`dependency-update`** skill |
 | Anything Neon-specific not covered above (branching, pooling, autoscaling) | **`neon`** (routing skill) → **`neon-postgres`** |
 | Discovering whether a skill exists for a novel task | **`find-skills`** skill |
 | Setting up/finishing `.junie/demo.md` or a VM `Dockerfile` | **`demo-setup`** skill |
