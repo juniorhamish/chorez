@@ -1,5 +1,5 @@
 import { sql } from "@/lib/db";
-import { ensureUpcomingInstancesForHousehold } from "@/lib/scheduling";
+import { computeRescheduleShifts, ensureUpcomingInstancesForHousehold, toDateStr } from "@/lib/scheduling";
 import { NextResponse } from "next/server";
 
 async function handleReschedule(req: Request) {
@@ -67,16 +67,41 @@ async function handleReschedule(req: Request) {
           AND id IN (SELECT id FROM ranked WHERE row_number > 1)
       `;
 
-      // Look at all remaining tasks in the past for this household that are
-      // incomplete, and reschedule all of those tasks to the current day.
-      const updatedAssignments = await sql`
-        UPDATE chore_assignments
-        SET due_date = ${currentDateStr}::date
+      // Look at every incomplete task for this household (past and future)
+      // so we can not only move overdue tasks to the current day, but also
+      // shift any subsequent, still-pending instances of the same recurring
+      // chore forward by the same amount - otherwise the gap between
+      // instances would get compressed rather than preserved.
+      const incompleteAssignments = await sql`
+        SELECT id, chore_id, due_date
+        FROM chore_assignments
         WHERE household_id = ${household.id}
-          AND due_date < ${currentDateStr}::date
           AND status != 'completed'
-        RETURNING id, chore_id, household_id, assigned_user_id, due_date, status
       `;
+
+      const shifts = computeRescheduleShifts(
+        incompleteAssignments.map((a) => ({
+          id: a.id as string,
+          chore_id: a.chore_id as string,
+          due_date: toDateStr(a.due_date as string | Date),
+        })),
+        currentDateStr
+      );
+
+      let updatedAssignments: Array<Record<string, unknown>> = [];
+      if (shifts.size > 0) {
+        const ids = Array.from(shifts.keys());
+        const dueDates = Array.from(shifts.values());
+        updatedAssignments = await sql`
+          UPDATE chore_assignments ca
+          SET due_date = updates.due_date::date
+          FROM (
+            SELECT unnest(${ids}::uuid[]) AS id, unnest(${dueDates}::date[]) AS due_date
+          ) AS updates
+          WHERE ca.id = updates.id
+          RETURNING ca.id, ca.chore_id, ca.household_id, ca.assigned_user_id, ca.due_date, ca.status
+        `;
+      }
 
       totalRescheduled += updatedAssignments.length;
       allRescheduledTasks.push(...updatedAssignments);

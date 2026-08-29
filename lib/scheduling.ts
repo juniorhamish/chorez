@@ -73,6 +73,75 @@ export function addDaysToDateStr(dateStr: string, days: number): string {
   return date.toISOString().split('T')[0];
 }
 
+/** Returns the number of whole days between two "YYYY-MM-DD" strings (`to` minus `from`). */
+export function daysBetweenDateStrs(from: string, to: string): number {
+  const [fromYear, fromMonth, fromDay] = from.split('-').map(Number);
+  const [toYear, toMonth, toDay] = to.split('-').map(Number);
+  const fromDate = Date.UTC(fromYear, fromMonth - 1, fromDay);
+  const toDate = Date.UTC(toYear, toMonth - 1, toDay);
+  return Math.round((toDate - fromDate) / (24 * 60 * 60 * 1000));
+}
+
+export interface ChoreAssignmentForReschedule {
+  id: string;
+  chore_id: string;
+  due_date: string; // "YYYY-MM-DD"
+}
+
+/**
+ * Given every incomplete `chore_assignments` row for a household, decides
+ * how the day-to-day reschedule cron should move overdue instances forward
+ * without compressing the gap between a recurring chore's subsequent,
+ * still-upcoming instances.
+ *
+ * For each chore that has an overdue (due_date < todayStr) instance, that
+ * instance moves to today, and every other, still-pending instance of the
+ * *same* chore that isn't itself overdue shifts forward by the same number
+ * of days, preserving the original spacing between occurrences.
+ *
+ * Assumes at most one overdue instance per chore (the cron job deduplicates
+ * these before calling this function); if more than one is present, only
+ * the latest is treated as the anchor for the shift.
+ *
+ * Returns a map of assignment id -> new due date ("YYYY-MM-DD") containing
+ * only the rows whose due date actually needs to change.
+ */
+export function computeRescheduleShifts(
+  assignments: ChoreAssignmentForReschedule[],
+  todayStr: string
+): Map<string, string> {
+  const shifts = new Map<string, string>();
+
+  const byChore = new Map<string, ChoreAssignmentForReschedule[]>();
+  for (const assignment of assignments) {
+    const group = byChore.get(assignment.chore_id);
+    if (group) group.push(assignment);
+    else byChore.set(assignment.chore_id, [assignment]);
+  }
+
+  for (const group of byChore.values()) {
+    const overdue = group.filter((a) => a.due_date < todayStr);
+    if (overdue.length === 0) continue;
+
+    // If, unexpectedly, more than one overdue instance exists for this
+    // chore, anchor the shift on the most recent one (closest to today).
+    const anchor = overdue.reduce((latest, a) => (a.due_date > latest.due_date ? a : latest));
+    const delta = daysBetweenDateStrs(anchor.due_date, todayStr);
+
+    for (const a of overdue) {
+      shifts.set(a.id, todayStr);
+    }
+
+    for (const a of group) {
+      if (a.due_date >= todayStr) {
+        shifts.set(a.id, addDaysToDateStr(a.due_date, delta));
+      }
+    }
+  }
+
+  return shifts;
+}
+
 /** Formats a Date as "YYYY-MM-DD" in the given IANA timezone. */
 export function formatDateInTz(date: Date, timezone: string): string {
   return new Intl.DateTimeFormat("en-CA", {

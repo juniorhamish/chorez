@@ -44,7 +44,7 @@ export interface HouseholdOptimizationPayload {
   }>;
 }
 
-const DEFAULT_MODEL = "gemini-3.6-flash";
+const DEFAULT_MODEL = "gemini-3.7-flash";
 
 // Building the response schema per-request (rather than as a static constant)
 // lets us constrain "assignmentId" and "userId" to an enum of the actual ids

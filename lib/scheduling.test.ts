@@ -3,6 +3,8 @@ import {
   addDaysToDateStr,
   calculateNextDueDate,
   clampDueDateToToday,
+  computeRescheduleShifts,
+  daysBetweenDateStrs,
   formatDateInTz,
   getMissingRecurringDates,
   isMoreFrequentThanWeekly,
@@ -126,6 +128,114 @@ describe("addDaysToDateStr", () => {
   it("handles a leap-year February correctly", () => {
     expect(addDaysToDateStr("2024-02-28", 1)).toBe("2024-02-29");
     expect(addDaysToDateStr("2024-02-29", 1)).toBe("2024-03-01");
+  });
+});
+
+describe("daysBetweenDateStrs", () => {
+  it("returns a positive number when `to` is after `from`", () => {
+    expect(daysBetweenDateStrs("2024-03-01", "2024-03-05")).toBe(4);
+  });
+
+  it("returns a negative number when `to` is before `from`", () => {
+    expect(daysBetweenDateStrs("2024-03-05", "2024-03-01")).toBe(-4);
+  });
+
+  it("returns zero for the same date", () => {
+    expect(daysBetweenDateStrs("2024-03-05", "2024-03-05")).toBe(0);
+  });
+
+  it("handles month/year boundaries", () => {
+    expect(daysBetweenDateStrs("2024-01-31", "2024-02-01")).toBe(1);
+    expect(daysBetweenDateStrs("2024-12-31", "2025-01-01")).toBe(1);
+  });
+});
+
+describe("computeRescheduleShifts", () => {
+  const TODAY = "2024-06-15";
+
+  it("moves a single overdue instance to today", () => {
+    const shifts = computeRescheduleShifts(
+      [{ id: "a1", chore_id: "chore-1", due_date: "2024-06-13" }],
+      TODAY
+    );
+    expect(Object.fromEntries(shifts)).toEqual({ a1: TODAY });
+  });
+
+  it("shifts subsequent pending instances of the same chore forward by the same delta, preserving spacing", () => {
+    // chore-1 is every-x-days=2: was due 06-13 (2 days overdue), with
+    // further instances already generated for 06-15 and 06-17.
+    const shifts = computeRescheduleShifts(
+      [
+        { id: "overdue", chore_id: "chore-1", due_date: "2024-06-13" },
+        { id: "next", chore_id: "chore-1", due_date: "2024-06-15" },
+        { id: "next-next", chore_id: "chore-1", due_date: "2024-06-17" },
+      ],
+      TODAY
+    );
+
+    // overdue moves to today (a 2-day shift), and both later instances
+    // shift forward by that same 2 days, keeping the original 2-day gaps.
+    expect(Object.fromEntries(shifts)).toEqual({
+      overdue: "2024-06-15",
+      next: "2024-06-17",
+      "next-next": "2024-06-19",
+    });
+  });
+
+  it("does not touch instances of a chore that has no overdue instance", () => {
+    const shifts = computeRescheduleShifts(
+      [
+        { id: "future-1", chore_id: "chore-2", due_date: "2024-06-16" },
+        { id: "future-2", chore_id: "chore-2", due_date: "2024-06-18" },
+      ],
+      TODAY
+    );
+    expect(shifts.size).toBe(0);
+  });
+
+  it("leaves other chores in the same batch unaffected", () => {
+    const shifts = computeRescheduleShifts(
+      [
+        { id: "overdue", chore_id: "chore-1", due_date: "2024-06-10" },
+        { id: "next", chore_id: "chore-1", due_date: "2024-06-20" },
+        { id: "unrelated", chore_id: "chore-2", due_date: "2024-06-22" },
+      ],
+      TODAY
+    );
+
+    expect(shifts.get("overdue")).toBe(TODAY);
+    // 5-day shift (06-10 -> 06-15) applied to chore-1's later instance only.
+    expect(shifts.get("next")).toBe("2024-06-25");
+    expect(shifts.has("unrelated")).toBe(false);
+  });
+
+  it("handles multiple independent chores each with their own overdue instance", () => {
+    const shifts = computeRescheduleShifts(
+      [
+        { id: "c1-overdue", chore_id: "chore-1", due_date: "2024-06-14" },
+        { id: "c1-next", chore_id: "chore-1", due_date: "2024-06-16" },
+        { id: "c2-overdue", chore_id: "chore-2", due_date: "2024-06-12" },
+        { id: "c2-next", chore_id: "chore-2", due_date: "2024-06-19" },
+      ],
+      TODAY
+    );
+
+    expect(shifts.get("c1-overdue")).toBe(TODAY);
+    expect(shifts.get("c1-next")).toBe("2024-06-17"); // +1 day
+    expect(shifts.get("c2-overdue")).toBe(TODAY);
+    expect(shifts.get("c2-next")).toBe("2024-06-22"); // +3 days
+  });
+
+  it("treats a due date of today as not overdue and leaves it untouched when there's no other overdue instance", () => {
+    const shifts = computeRescheduleShifts(
+      [{ id: "today-task", chore_id: "chore-1", due_date: TODAY }],
+      TODAY
+    );
+    expect(shifts.size).toBe(0);
+  });
+
+  it("returns an empty map for an empty input", () => {
+    expect(computeRescheduleShifts([], TODAY).size).toBe(0);
   });
 });
 

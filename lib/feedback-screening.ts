@@ -21,7 +21,7 @@ export interface FeedbackScreeningResult {
   duplicateIssueNumber: number | null;
 }
 
-const DEFAULT_MODEL = "gemini-3.6-flash";
+const DEFAULT_MODEL = "gemini-3.7-flash";
 
 function buildResponseSchema() {
   return {
