@@ -16,7 +16,8 @@ describe("useAddTaskForm", () => {
     expect(result.current.newTaskTitle).toBe("");
     expect(result.current.newTaskRoomId).toBe("");
     expect(result.current.newTaskDuration).toBe("");
-    expect(result.current.newTaskLastCompleted).toBe(new Date().toLocaleDateString('en-CA'));
+    expect(result.current.newTaskHasLastCompleted).toBe(false);
+    expect(result.current.newTaskLastCompleted).toBe("");
     expect(result.current.newTaskFrequency).toBe("weekly");
     expect(result.current.newTaskFrequencyInterval).toBe("1");
     expect(result.current.newTaskIsPrivate).toBe(false);
@@ -30,6 +31,8 @@ describe("useAddTaskForm", () => {
       result.current.setNewTaskTitle("Stale title");
       result.current.setNewTaskRoomId("room-2");
       result.current.setNewTaskDuration("45");
+      result.current.setNewTaskHasLastCompleted(true);
+      result.current.setNewTaskLastCompleted("2024-01-01");
       result.current.setNewTaskFrequency("monthly");
       result.current.setNewTaskFrequencyInterval("3");
       result.current.setNewTaskIsPrivate(true);
@@ -43,7 +46,8 @@ describe("useAddTaskForm", () => {
     expect(result.current.newTaskTitle).toBe("");
     expect(result.current.newTaskRoomId).toBe("room-1");
     expect(result.current.newTaskDuration).toBe("");
-    expect(result.current.newTaskLastCompleted).toBe(new Date().toLocaleDateString('en-CA'));
+    expect(result.current.newTaskHasLastCompleted).toBe(false);
+    expect(result.current.newTaskLastCompleted).toBe("");
     expect(result.current.newTaskFrequency).toBe("weekly");
     expect(result.current.newTaskFrequencyInterval).toBe("1");
     expect(result.current.newTaskIsPrivate).toBe(false);

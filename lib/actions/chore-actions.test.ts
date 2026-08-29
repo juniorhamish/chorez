@@ -188,6 +188,25 @@ describe("addChore due-date clamping", () => {
     vi.useRealTimers();
   });
 
+  it("schedules the task immediately for today when last_completed_date is omitted", async () => {
+    sqlMock.mockResolvedValueOnce([{ id: "chore-1" }]); // INSERT INTO chores ... RETURNING id
+    await addChore({ ...baseData, frequency: "weekly" });
+
+    // VALUES (chore_id, household_id, due_date, status, assigned_user_id)
+    expect(sqlMock.mock.calls[1][3]).toBe("2024-06-15");
+  });
+
+  it("schedules the task immediately for today when last_completed_date is null or empty string", async () => {
+    sqlMock.mockResolvedValueOnce([{ id: "chore-1" }]);
+    await addChore({ ...baseData, frequency: "weekly", last_completed_date: null });
+    expect(sqlMock.mock.calls[1][3]).toBe("2024-06-15");
+
+    sqlMock.mockReset();
+    sqlMock.mockResolvedValueOnce([{ id: "chore-2" }]);
+    await addChore({ ...baseData, frequency: "weekly", last_completed_date: "" });
+    expect(sqlMock.mock.calls[1][3]).toBe("2024-06-15");
+  });
+
   it("clamps the due date to today when the computed next due date would still be in the past", async () => {
     sqlMock.mockResolvedValueOnce([{ id: "chore-1" }]); // INSERT INTO chores ... RETURNING id
     // last_completed_date is far enough in the past that last + 1 week is
