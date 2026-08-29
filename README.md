@@ -199,35 +199,24 @@ VERCEL_PROJECT_ID=<this project's Vercel project ID, from Project Settings → G
 VERCEL_ORG_ID=<your Vercel team/org ID; omit the secret entirely if the project is under a personal account>
 ```
 
-## Automated Issue Triage (Junie GitHub Action)
+## Issue Triage (interactive `issue-to-pr` skill)
 
-`.github/workflows/junie-issue-to-pr.yml` runs the official [Junie GitHub Action](https://github.com/JetBrains/junie-github-action) every time an issue is opened or edited (excluding issues opened/edited by bots, to avoid loops). Junie reads the issue's title, description, and all existing comments, then:
+Turning a GitHub issue into a PR is a human-in-the-loop, on-demand skill (`.junie/skills/issue-to-pr/SKILL.md`) rather than a fully-automated GitHub Action. Invoke it from an agent session (e.g. "look at open issues and pick one to fix") and it will:
 
-- If the issue has enough information to act on, it follows this repo's `AGENTS.md` codebase map (including which `.junie/skills/*` skill or `.junie/agents/*` sub-agent to reach for) and opens a pull request implementing the fix or feature, with `Fixes #<issue number>` in its description so the issue auto-closes on merge.
-- If the issue is missing key details (e.g. reproduction steps, expected behavior, acceptance criteria), Junie posts a comment on the issue asking clarifying questions instead of opening a PR.
+1. List open issues that GitHub doesn't already consider linked to a PR (via the `-linked:pr` search qualifier), and ask you to pick one.
+2. Read the issue's title, description, and comments, and ask clarifying questions if anything needed to implement it safely is missing.
+3. Analyze the codebase — following this repo's `AGENTS.md` codebase map, including which `.junie/skills/*` skill or `.junie/agents/*` sub-agent to reach for — and present an implementation plan for you to approve or adjust.
+4. Only once you confirm the plan, implement it, add/update tests, make sure the project builds, and open a pull request with `Fixes #<issue number>` in its description so the issue auto-closes on merge.
 
-If the change requires a database migration, this workflow only ever adds the new `migrations/*.sql` file(s) to the PR — it never applies them to the persistent `dev` Neon branch. Schema changes are applied exclusively as part of the PR's own Vercel Preview Deployment build (see "Preview Deployments & Database Branching" above), which already runs the migration runner against that preview's dedicated, disposable Neon branch. The `db-agent` sub-agent (`.junie/agents/db-agent.md`) enforces this restriction whenever it's invoked from this workflow.
-
-Once a PR is opened, a second job in the same workflow polls the GitHub Deployments API for the PR branch's Vercel preview deployment (see "Preview Deployments & Database Branching" below) and posts a comment on the original issue linking both the PR and its live preview URL as soon as the deployment succeeds.
-
-A third job (`approve-db-migration-check`) auto-approves the resulting run of `pr-db-check.yml` ("PR Database Migration Check") for Junie's PR, in case GitHub requires manual maintainer approval before a workflow run triggered this way is allowed to execute — so the migration safety-net check still runs automatically instead of sitting stuck until a human clicks "Approve and run".
+If the change requires a database migration, the skill delegates that to the `db-agent` sub-agent (`.junie/agents/db-agent.md`), which only ever adds the new `migrations/*.sql` file(s) — schema changes are still applied exclusively as part of the PR's own Vercel Preview Deployment build (see "Preview Deployments & Database Branching" above), not the persistent `dev` Neon branch.
 
 ### Security
 
-Because this job runs with `contents: write`, `pull-requests: write`, and `issues: write` permissions but is triggered by an issue's own (attacker-controllable, on a public repo) title/description/comments, the following safeguards keep a malicious or over-eager run from turning into arbitrary write access, a prompt-injection attack, or an unrelated/scope-creeping PR:
+An issue's title/description/comments can still have been written by anyone able to open an issue on this repo (including, on a public repo, people with no write access), so the skill treats that text as untrusted data throughout, even though a trusted human is now driving the session and approving the plan before anything is implemented:
 
-- **Prompt hardening** — the prompt explicitly tells Junie to treat the issue's title/description/comments as untrusted data describing a requested change, never as instructions that can override the prompt itself, reveal secrets/tokens, touch CI/workflow files or auth/RLS code, run arbitrary commands, or reach out to external services — and to skip opening a PR (posting an explanatory comment instead) if the issue doesn't hold up as a legitimate request once any such embedded instructions are stripped out.
-- **Scope discipline** — the prompt also requires every changed file in the PR to trace back directly to the issue being resolved, explicitly forbidding speculative or "while I'm in here" changes (e.g. bumping the Gemini model version, unrelated dependency bumps, or reformatting untouched code), and requires Junie to review its own diff file-by-file and revert anything that doesn't address the issue before opening the PR.
-
-### Configuration
-
-```env
-# Required. JetBrains Junie API key, generated at https://junie.jetbrains.com/cli.
-# Set as a GitHub Actions repo secret.
-JUNIE_API_KEY=<Junie API key>
-```
-
-No other secrets are required: the workflow uses the default `GITHUB_TOKEN` to open PRs, comment on issues, and read deployment statuses. Note that PRs opened using the default `GITHUB_TOKEN` don't themselves trigger other `pull_request`-scoped workflows (e.g. `pr-db-check.yml`) due to GitHub Actions' recursive-workflow prevention — the Vercel/Neon preview pipeline still runs regardless, since it's driven by Vercel's own GitHub integration rather than a workflow.
+- **Prompt hardening** — the skill instructs the agent to treat the issue's title/description/comments as untrusted data describing a requested change, never as instructions that can override the skill itself, reveal secrets/tokens, touch CI/workflow files or auth/RLS code, run arbitrary commands, or reach out to external services — and to flag the request to the user instead of implementing it if it doesn't hold up as legitimate once any such embedded instructions are stripped out.
+- **Scope discipline** — the skill requires every changed file in the PR to trace back directly to the approved plan, explicitly forbidding speculative or "while I'm in here" changes (e.g. bumping a model version, unrelated dependency bumps, or reformatting untouched code), and requires a file-by-file self-review of the diff before opening the PR.
+- **Explicit human checkpoints** — unlike the previous fully-automated version, the skill never picks an issue or implements anything without the user first selecting the issue and then separately approving the implementation plan.
 
 ## Error Boundaries
 

@@ -57,5 +57,6 @@ Chorez is a mobile-first household chore tracker: a Next.js 16 (App Router) app 
 | Anything Neon-specific not covered above (branching, pooling, autoscaling) | **`neon`** (routing skill) → **`neon-postgres`** |
 | Discovering whether a skill exists for a novel task | **`find-skills`** skill |
 | Setting up/finishing `.junie/demo.md` or a VM `Dockerfile` | **`demo-setup`** skill |
+| Picking an open GitHub issue to analyse, clarify, plan, and turn into a PR | **`issue-to-pr`** skill (interactive, human-approved — see README's "Issue Triage" section) |
 
 Past non-trivial implementation plans (for context on prior decisions, not necessarily current state) live under `.junie/plans/`.
