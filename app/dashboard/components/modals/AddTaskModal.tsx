@@ -18,6 +18,8 @@ interface AddTaskModalProps {
   setNewTaskFrequency: (value: ChoreFrequency) => void;
   newTaskFrequencyInterval: string;
   setNewTaskFrequencyInterval: (value: string) => void;
+  newTaskHasLastCompleted: boolean;
+  setNewTaskHasLastCompleted: (value: boolean) => void;
   newTaskLastCompleted: string;
   setNewTaskLastCompleted: (value: string) => void;
   newTaskIsPrivate: boolean;
@@ -42,6 +44,8 @@ export default function AddTaskModal({
   setNewTaskFrequency,
   newTaskFrequencyInterval,
   setNewTaskFrequencyInterval,
+  newTaskHasLastCompleted,
+  setNewTaskHasLastCompleted,
   newTaskLastCompleted,
   setNewTaskLastCompleted,
   newTaskIsPrivate,
@@ -200,16 +204,47 @@ export default function AddTaskModal({
           )}
 
           {/* Last Completed */}
-          <div>
-            <label className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
-              Date Last Completed
-            </label>
-            <input
-              type="date"
-              value={newTaskLastCompleted}
-              onChange={(e) => setNewTaskLastCompleted(e.target.value)}
-              className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
-            />
+          <div className="space-y-3">
+            <div className="bg-indigo-50/50 rounded-2xl px-5 py-4 flex items-start gap-4">
+              <input
+                id="newTaskHasLastCompleted"
+                type="checkbox"
+                checked={newTaskHasLastCompleted}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setNewTaskHasLastCompleted(checked);
+                  if (checked && !newTaskLastCompleted) {
+                    setNewTaskLastCompleted(new Date().toLocaleDateString('en-CA'));
+                  }
+                }}
+                disabled={isAddingTask}
+                className="mt-1 h-5 w-5 shrink-0 rounded-md border-2 border-indigo-200 text-indigo-600 focus:ring-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <label htmlFor="newTaskHasLastCompleted" className="cursor-pointer">
+                <div className="text-xs font-black uppercase tracking-widest text-indigo-400">
+                  Set date last completed
+                </div>
+                <p className="text-sm font-bold text-indigo-400/80 mt-1">
+                  Leave unchecked to schedule this task immediately (due today).
+                </p>
+              </label>
+            </div>
+
+            {newTaskHasLastCompleted && (
+              <div>
+                <label htmlFor="newTaskLastCompleted" className="block text-xs font-black uppercase tracking-widest text-indigo-400 mb-2 ml-1">
+                  Date Last Completed
+                </label>
+                <input
+                  id="newTaskLastCompleted"
+                  type="date"
+                  value={newTaskLastCompleted}
+                  onChange={(e) => setNewTaskLastCompleted(e.target.value)}
+                  disabled={isAddingTask}
+                  className="w-full bg-indigo-50/50 border-2 border-transparent outline-none rounded-2xl px-5 py-4 font-bold text-lg transition-all"
+                />
+              </div>
+            )}
           </div>
 
           {/* Just for me */}

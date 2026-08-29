@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { Chore, DbUser, Household, HouseholdMember, HouseholdUser, Room, Task } from "@/lib/dashboard/types";
@@ -18,14 +18,24 @@ vi.mock("@auth0/nextjs-auth0/client", () => ({
   useUser: () => ({ user: { name: "Alex", given_name: "Alex" } }),
 }));
 
-const completeTaskMock = vi.fn().mockResolvedValue(undefined);
-const toggleFavoriteRoomMock = vi.fn().mockResolvedValue(undefined);
-const toggleFavoriteChoreMock = vi.fn().mockResolvedValue(undefined);
-const removeMemberMock = vi.fn().mockResolvedValue(undefined);
-const renameHouseholdMock = vi.fn().mockResolvedValue(undefined);
+const {
+  addChoreMock,
+  completeTaskMock,
+  toggleFavoriteRoomMock,
+  toggleFavoriteChoreMock,
+  removeMemberMock,
+  renameHouseholdMock,
+} = vi.hoisted(() => ({
+  addChoreMock: vi.fn().mockResolvedValue({ id: "chore-new" }),
+  completeTaskMock: vi.fn().mockResolvedValue(undefined),
+  toggleFavoriteRoomMock: vi.fn().mockResolvedValue(undefined),
+  toggleFavoriteChoreMock: vi.fn().mockResolvedValue(undefined),
+  removeMemberMock: vi.fn().mockResolvedValue(undefined),
+  renameHouseholdMock: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("@/lib/actions/chore-actions", () => ({
-  addChore: vi.fn().mockResolvedValue({ id: "chore-new" }),
+  addChore: addChoreMock,
   addRoom: vi.fn().mockResolvedValue({ id: "room-new" }),
   completeTask: completeTaskMock,
   assignTaskToSelf: vi.fn().mockResolvedValue(undefined),
@@ -296,5 +306,61 @@ describe("DashboardClient", () => {
     await waitFor(() => expect(screen.queryByText("Task Library")).not.toBeInTheDocument());
     const roomSelect = screen.getByDisplayValue("Kitchen") as HTMLSelectElement;
     expect(roomSelect.value).toBe("room-1");
+  });
+
+  it("adds a task with default option omitting last completed date so it is scheduled immediately", async () => {
+    const user = userEvent.setup();
+    renderDashboard({ initialTasks: [] });
+
+    await user.click(screen.getByRole("button", { name: "Add Task" }));
+    expect(screen.getByText("Create a new chore")).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText("e.g. Clean the fridge"), "Sweep porch");
+    await user.type(screen.getByPlaceholderText("e.g. 20"), "10");
+
+    // "Set date last completed" is unchecked by default
+    const checkbox = screen.getByRole("checkbox", { name: /set date last completed/i });
+    expect(checkbox).not.toBeChecked();
+
+    const addTaskButtons = screen.getAllByRole("button", { name: "Add Task" });
+    await user.click(addTaskButtons[addTaskButtons.length - 1]);
+
+    expect(addChoreMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Sweep porch",
+        room_id: "room-1",
+        estimated_duration_minutes: 10,
+        last_completed_date: undefined,
+        frequency: "weekly",
+      })
+    );
+  });
+
+  it("adds a task with a specified last completed date when checkbox is checked", async () => {
+    const user = userEvent.setup();
+    renderDashboard({ initialTasks: [] });
+
+    await user.click(screen.getByRole("button", { name: "Add Task" }));
+    await user.type(screen.getByPlaceholderText("e.g. Clean the fridge"), "Mow lawn");
+    await user.type(screen.getByPlaceholderText("e.g. 20"), "30");
+
+    const checkbox = screen.getByRole("checkbox", { name: /set date last completed/i });
+    await user.click(checkbox);
+
+    const dateInput = screen.getByLabelText("Date Last Completed");
+    fireEvent.change(dateInput, { target: { value: "2024-06-01" } });
+
+    const addTaskButtons = screen.getAllByRole("button", { name: "Add Task" });
+    await user.click(addTaskButtons[addTaskButtons.length - 1]);
+
+    expect(addChoreMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Mow lawn",
+        room_id: "room-1",
+        estimated_duration_minutes: 30,
+        last_completed_date: "2024-06-01",
+        frequency: "weekly",
+      })
+    );
   });
 });

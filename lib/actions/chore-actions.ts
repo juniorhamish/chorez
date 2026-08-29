@@ -200,7 +200,7 @@ export async function addChore(data: {
   title: string;
   room_id: string;
   estimated_duration_minutes: number;
-  last_completed_date: string;
+  last_completed_date?: string | null;
   frequency: ChoreFrequency;
   frequency_interval?: number | null;
   is_private?: boolean;
@@ -232,19 +232,32 @@ export async function addChore(data: {
   // one instance per occurrence across the rolling schedule horizon,
   // instead of a single "next" instance, so a different person can be
   // assigned each time it comes up.
-  const lastDate = new Date(last_completed_date);
-  if (isMoreFrequentThanWeekly(frequency, frequency_interval)) {
-    await ensureUpcomingInstances(choreId, dbUser.active_household_id, frequency, frequency_interval, lastDate, private_to_user_id);
+  if (last_completed_date) {
+    const lastDate = new Date(last_completed_date);
+    if (isMoreFrequentThanWeekly(frequency, frequency_interval)) {
+      await ensureUpcomingInstances(choreId, dbUser.active_household_id, frequency, frequency_interval, lastDate, private_to_user_id);
+    } else {
+      // If the last-completed date is old enough that the computed next due
+      // date would still be in the past, clamp it to today instead.
+      const dueDate = calculateNextDueDate(lastDate, frequency, frequency_interval);
+      const dueDateStr = clampDueDateToToday(dueDate);
+      await sql`
+        INSERT INTO chore_assignments (chore_id, household_id, due_date, status, assigned_user_id)
+        VALUES (${choreId}, ${dbUser.active_household_id}, ${dueDateStr}, 'pending', ${private_to_user_id})
+        ON CONFLICT (chore_id, due_date) DO NOTHING
+      `;
+    }
   } else {
-    // If the last-completed date is old enough that the computed next due
-    // date would still be in the past, clamp it to today instead.
-    const dueDate = calculateNextDueDate(lastDate, frequency, frequency_interval);
-    const dueDateStr = clampDueDateToToday(dueDate);
+    // If last_completed_date is omitted, schedule the task immediately (starting today).
+    const dueDateStr = clampDueDateToToday(new Date());
     await sql`
       INSERT INTO chore_assignments (chore_id, household_id, due_date, status, assigned_user_id)
       VALUES (${choreId}, ${dbUser.active_household_id}, ${dueDateStr}, 'pending', ${private_to_user_id})
       ON CONFLICT (chore_id, due_date) DO NOTHING
     `;
+    if (isMoreFrequentThanWeekly(frequency, frequency_interval)) {
+      await ensureUpcomingInstances(choreId, dbUser.active_household_id, frequency, frequency_interval, new Date(), private_to_user_id);
+    }
   }
 
   revalidatePath("/dashboard");

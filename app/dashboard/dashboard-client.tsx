@@ -238,6 +238,8 @@ export default function DashboardClient({
     setNewTaskRoomId,
     newTaskDuration,
     setNewTaskDuration,
+    newTaskHasLastCompleted,
+    setNewTaskHasLastCompleted,
     newTaskLastCompleted,
     setNewTaskLastCompleted,
     newTaskFrequency,
@@ -524,7 +526,7 @@ export default function DashboardClient({
     newTaskTitle.trim().length > 0 &&
     newTaskRoomId.length > 0 &&
     Number(newTaskDuration) > 0 &&
-    !!newTaskLastCompleted &&
+    (!newTaskHasLastCompleted || !!newTaskLastCompleted) &&
     (!isCustomIntervalFrequency || Number(newTaskFrequencyInterval) > 0);
 
   const handleAddTask = async () => {
@@ -535,7 +537,7 @@ export default function DashboardClient({
         title: newTaskTitle.trim(),
         room_id: newTaskRoomId,
         estimated_duration_minutes: Number(newTaskDuration),
-        last_completed_date: newTaskLastCompleted,
+        last_completed_date: newTaskHasLastCompleted ? newTaskLastCompleted : undefined,
         frequency: newTaskFrequency,
         frequency_interval: isCustomIntervalFrequency ? Number(newTaskFrequencyInterval) : undefined,
         is_private: newTaskIsPrivate,
@@ -949,6 +951,8 @@ export default function DashboardClient({
             setNewTaskFrequency={setNewTaskFrequency}
             newTaskFrequencyInterval={newTaskFrequencyInterval}
             setNewTaskFrequencyInterval={setNewTaskFrequencyInterval}
+            newTaskHasLastCompleted={newTaskHasLastCompleted}
+            setNewTaskHasLastCompleted={setNewTaskHasLastCompleted}
             newTaskLastCompleted={newTaskLastCompleted}
             setNewTaskLastCompleted={setNewTaskLastCompleted}
             newTaskIsPrivate={newTaskIsPrivate}

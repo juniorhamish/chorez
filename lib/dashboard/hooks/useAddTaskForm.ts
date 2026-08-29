@@ -8,7 +8,8 @@ export function useAddTaskForm(selectableRooms: Room[]) {
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskRoomId, setNewTaskRoomId] = useState("");
   const [newTaskDuration, setNewTaskDuration] = useState("");
-  const [newTaskLastCompleted, setNewTaskLastCompleted] = useState(() => new Date().toLocaleDateString('en-CA'));
+  const [newTaskHasLastCompleted, setNewTaskHasLastCompleted] = useState(false);
+  const [newTaskLastCompleted, setNewTaskLastCompleted] = useState("");
   const [newTaskFrequency, setNewTaskFrequency] = useState<ChoreFrequency>('weekly');
   const [newTaskFrequencyInterval, setNewTaskFrequencyInterval] = useState("1");
   const [newTaskIsPrivate, setNewTaskIsPrivate] = useState(false);
@@ -16,9 +17,11 @@ export function useAddTaskForm(selectableRooms: Room[]) {
 
   const openAddTask = (preselectedRoomId?: string) => {
     setNewTaskTitle("");
-    setNewTaskRoomId(preselectedRoomId ?? selectableRooms[0]?.id ?? "");
+    const initialRoomId = typeof preselectedRoomId === "string" ? preselectedRoomId : selectableRooms[0]?.id ?? "";
+    setNewTaskRoomId(initialRoomId);
     setNewTaskDuration("");
-    setNewTaskLastCompleted(new Date().toLocaleDateString('en-CA'));
+    setNewTaskHasLastCompleted(false);
+    setNewTaskLastCompleted("");
     setNewTaskFrequency('weekly');
     setNewTaskFrequencyInterval("1");
     setNewTaskIsPrivate(false);
@@ -34,6 +37,8 @@ export function useAddTaskForm(selectableRooms: Room[]) {
     setNewTaskRoomId,
     newTaskDuration,
     setNewTaskDuration,
+    newTaskHasLastCompleted,
+    setNewTaskHasLastCompleted,
     newTaskLastCompleted,
     setNewTaskLastCompleted,
     newTaskFrequency,

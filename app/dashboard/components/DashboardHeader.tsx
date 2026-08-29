@@ -278,7 +278,7 @@ export default function DashboardHeader({
 
           <div aria-hidden="true" className="hidden sm:block w-px h-6 bg-indigo-100" />
           <button
-            onClick={openAddTask}
+            onClick={() => openAddTask()}
             aria-label="Add Task"
             title="Add Task"
             className="p-2 bg-indigo-600 text-white rounded-full shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95"
